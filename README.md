@@ -1,36 +1,48 @@
 # Nautica
-Nautica is a seamless boat and water-charter booking platform that connects travelers with curated river, lake, and coastal vessels—featuring instant pricing, custom add-ons, multi-method checkout, and scannable digital boarding passes.
 
-## Run locally — no Android SDK required
+Native Android boat-charter booking demo built with Kotlin, Jetpack Compose Material 3, Navigation Compose, MVVM/StateFlow, and Preferences DataStore. Android 8.0+ (API 26).
 
-The current implementation is an offline browser demo. Extract or clone this repository and open **index.html** in a modern browser. No installation, build step, or internet connection is needed.
+## Run
 
-If Node.js is already installed, you can optionally run:
+Open this directory in a current Android Studio, select JDK 17 or 21, install Android SDK Platform 35 and Build Tools, and sync Gradle. Run the `app` configuration on an emulator or Android device.
 
 ```sh
-npm run dev
+./gradlew testDebugUnitTest assembleDebug
 ```
 
-Then open **http://localhost:3000**. No `npm install` is required.
+The Gradle 8.11.1 wrapper is included. Initial sync needs internet access. On Windows, use `gradlew.bat`. No API keys or backend configuration are required.
 
-Payments are simulated, exchange rates are fixed at ₹83/USD, and boarding passes are demo tickets. This version does not charge money or issue real travel credentials.
+## Included
 
-See [LOCAL_SETUP.md](LOCAL_SETUP.md) for test payment details, offline storage behavior, PDF/share instructions, and verification limits.
+- Eight distinct vessels across Assi Ghat, Dashashwamedh Ghat, Marina Bay, and Lake Como, with capacity, ratings, amenities, and vector-drawn headers.
+- Destination, date, time, vessel type, and 1–30 guest filters, including a Material 3 search/filter bottom sheet and date dialog.
+- Global reactive INR/USD preferences; badges count locally saved passes dated today or later.
+- Trip summary, included safety equipment, optional refreshments, photographer, and guide. Fees are 5% of fare plus add-ons, rounded to the nearest paise.
+- UPI ID validation and app selection, preview payment QR, card network detection and Luhn/expiry/CVV validation, a live formatted card preview, and searchable net-banking selection.
+- Two-second simulated checkout, guarded against repeat taps, followed by an animated confirmation and perforated boarding-pass layout.
+- Unique booking references, metadata QR codes, local offline pass history, PDF download through Android's document picker, and sharing through Android Sharesheet/FileProvider.
+- Unit tests for payment validation, networks, and price calculations.
 
-## Experience
+## Pricing and payment contract
 
-Set sail with effortless boat charters and waterfront experiences.
+All amounts are stored as integer INR paise. A fixed demonstration rate of **₹83 = US$1** converts every displayed price, extra, fee, and saved total consistently; it is not a market exchange-rate feed. Example: ₹1,200 = $14.46; the ₹1,500 photographer costs $18.07. Fares reserve one private vessel for a one-hour trip, so changing guest count affects availability rather than the flat vessel fare.
 
-Nautica reimagines how travelers discover, customize, and book private boats and scenic water rides—from tranquil sunrise cruises at Assi Ghat and Dashashwamedh Ghat to luxury charters at Marina Bay and Lake Como. Whether you are planning a peaceful morning river tour, a sunset celebration, or a guided heritage voyage, Nautica puts the entire waterfront at your fingertips.
+Every payment path is explicitly simulated. UPI app buttons select the simulated method; they do not launch or charge an app. The checkout QR encodes a clearly marked demo payload, not a payable merchant address. The boarding-pass QR is a real scannable encoding of the booking metadata. PDF exports are labeled as demo passes. No full PAN, CVV, or UPI ID is written to DataStore; saved methods contain only network/last four or provider name.
 
-Why Travelers Choose Nautica:
+## Code map
 
-Curated Fleet Discovery: Filter vessels in real time by boarding pier, date, time slot (Sunrise, Morning, Sunset, Evening), vessel category, and guest capacity.
+- `model/`: serializable domain objects, currency formatting, pricing, payment validation
+- `data/`: mock fleet, DataStore repository, QR-backed PDF export/share
+- `viewmodel/`: trip state, currency/history streams, checkout state machine
+- `ui/theme/`: maritime colors and Material theme
+- `ui/components/`: vector vessels, QR rendering, reusable pricing UI
+- `ui/screens/`: fleet, trip, checkout, pass, offline history
+- `MainActivity.kt`: application shell, navigation, currency toggle, active pass badge
 
-Transparent, Real-Time Pricing: Switch effortlessly between INR (₹) and USD ($) with instant fare calculation, clear port fees, and zero hidden charges.
+## Release boundary
 
-Tailored Onboard Experiences: Customize your trip in one tap with optional add-ons including onboard refreshments, a local heritage guide, a professional photographer, and complimentary safety gear.
+This is a self-contained implementation of the requested mock-data and simulated-payment workflow, not a live booking service. Before a public release, integrate authoritative inventory and pricing, a server-created payment-provider checkout, verified payment webhooks, expiring/signed boarding credentials and pier-side verification, authentication, cancellation/refund policies, accessibility/device testing, release signing, and an appropriate privacy policy. Do not collect raw card details in a production version; use the payment provider's hosted/tokenized UI.
 
-Fast, Flexible Checkout: Pay securely using your preferred method—UPI / QR Scan, Credit & Debit Cards with live card preview, or Net Banking.
+Pending checkout state is retained across rotation by the ViewModel but not restored after process death. Completed bookings and currency persist locally. Device-local mock booking dates use the device timezone; a live service must use each destination's timezone. Local JSON storage has no schema migration policy yet. PDF export runs on an IO dispatcher. The card preview is a styled gradient illustration, not a physically rotating 3D object. Custom illustrations are illustrative, not photos of actual charter vessels.
 
-Instant Digital Boarding Pass: Skip the ticket counter. Receive an immediate, verifiable NTC e-ticket with a scannable QR code that you can save, share, or access offline under My Pass.
+See `VALIDATION.md` for checks actually performed in the delivery environment.
