@@ -33,6 +33,7 @@ Then open the same address. Neither option needs the Android SDK.
 - Eight vessels across Assi Ghat, Dashashwamedh Ghat, Marina Bay, and Lake Como.
 - Destination, date, time, vessel-type and 1–30 guest filters with live availability.
 - INR/USD currency switch in the main header and inside checkout.
+- Numbered top-down seating diagrams with selectable positions, a separate captain position, and one seat required per guest.
 - Included safety kit and three optional extras with a 5% fee and live totals.
 - UPI/QR preview, validated interactive card preview, and net-banking selection/search.
 - Two-second simulated checkout with duplicate-submit protection.
@@ -41,7 +42,7 @@ Then open the same address. Neither option needs the Android SDK.
 
 ## Try a booking
 
-Select **Ganges Dawn**, choose extras, then use:
+Select **Choose seats** on **Ganges Dawn**, choose one seat per guest (or **Choose seats for me**), choose extras, then use:
 
 - Lead guest: any name with at least two characters.
 - UPI: `alex@okaxis`, or
@@ -70,7 +71,7 @@ Run dependency-free tests, if Node.js is available:
 npm test
 ```
 
-Eleven core tests passed: fleet/filter combinations, fee arithmetic, currency conversion, UPI/card/expiry/CVV validation, local date handling, international-text QR generation, and offline asset completeness. JavaScript syntax checks passed. Additional DOM integration checks exercised all three payment modes, rejected invalid inputs, extras, currency switching inside checkout, Unicode passenger data, storage, QR rendering, and reopening passes after reload. The temporary DOM testing dependencies are not needed or included in this app.
+Fifteen core tests passed: fleet/filter combinations, fee arithmetic, currency conversion, UPI/card/expiry/CVV validation, local date handling, international-text QR generation, offline asset completeness, numbered layouts, seat-count validation, and legacy pass compatibility. JavaScript syntax checks passed. Additional DOM integration checks exercised all three payment modes, rejected invalid inputs, extras, currency switching inside checkout, Unicode passenger data, storage, QR rendering, and reopening passes after reload. The temporary DOM testing dependencies are not needed or included in this app.
 
 No graphical browser tool was available in the delivery environment. Visual layout, actual QR scanning, browser printing, OS file sharing, and mobile device behavior remain to be checked in a real browser. No hosting or public deployment was performed.
 
@@ -83,3 +84,5 @@ No graphical browser tool was available in the delivery environment. Visual layo
 - `vendor/qrcode.js`: bundled MIT-licensed QR generator; see `vendor/LICENSE.qrcode`
 - `server.cjs`: optional dependency-free local server
 - `core.test.cjs`: Node test suite
+
+Seating plans are illustrative preferences within private charters. They do not model shared seat inventory. Your captain must confirm the actual vessel layout. Older passes created before seat selection show **Not selected** instead of inventing seat assignments.

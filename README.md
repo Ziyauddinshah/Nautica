@@ -17,6 +17,12 @@ Payments are simulated, exchange rates are fixed at ₹83/USD, and boarding pass
 
 See [LOCAL_SETUP.md](LOCAL_SETUP.md) for test payment details, offline storage behavior, PDF/share instructions, and verification limits.
 
+## Numbered boat seating
+
+Select **Choose seats** on a boat to view a top-down illustrated seating plan. Seat numbers show their front/rear and left/right positions, with a separate captain position. Choose one seat per guest, or use **Choose seats for me**. Selections are included in checkout, saved passes, QR metadata, and printable/downloadable tickets.
+
+Layouts are illustrative preferences within a private charter, not shared seat inventory or verified vessel blueprints. Confirm the actual layout with the captain.
+
 ## Experience
 
 Set sail with effortless boat charters and waterfront experiences.

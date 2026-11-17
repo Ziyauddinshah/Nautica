@@ -23,6 +23,29 @@ function upi(value){return /^[A-Za-z0-9._-]{2,}@[A-Za-z][A-Za-z0-9.-]{1,}$/.test
 function cvv(number,value){return (network(number)==='AMEX'?/^\d{4}$/:/^\d{3}$/).test(value);}
 function localDate(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 function available(filters){return boats.filter(b=>(!filters.pier||b.pier===filters.pier)&&(filters.type===types[0]||b.type===filters.type)&&b.capacity>=filters.guests);}
-const api={piers,types,slots,boats,extras,money,amounts,network,card,expiry,upi,cvv,localDate,available};
+// Numbered passenger seats; the captain is separate from the advertised capacity.
+function seatLayout(boat){
+ const columns=boat.type==='Party pontoon'?4:2;
+ const rowCount=Math.ceil(boat.capacity/columns);
+ return Array.from({length:boat.capacity},(_,index)=>{
+  const row=Math.floor(index/columns),inRow=Math.min(columns,boat.capacity-row*columns);
+  const column=columns===4&&inRow===2?(index%columns===0?0:3):index%columns;
+  return {id:String(index+1).padStart(2,'0'),row,column,
+   side:inRow===1?'Center':column<columns/2?'Port (left)':'Starboard (right)',
+   zone:rowCount===1?'Front':row===0?'Front':row===rowCount-1?'Rear':'Middle'};
+ });
+}
+function validSeats(boat,seats,guests){
+ if(!Array.isArray(seats)||!Number.isInteger(guests)||guests<1||guests>boat.capacity||seats.length!==guests||new Set(seats).size!==seats.length)return false;
+ const ids=new Set(seatLayout(boat).map(seat=>seat.id));
+ return seats.every(id=>ids.has(id));
+}
+function seatText(boat,seats){
+ if(!Array.isArray(seats))return 'Not selected';
+ const ids=new Set(seatLayout(boat).map(seat=>seat.id));
+ const selected=[...new Set(seats.filter(id=>ids.has(id)))].sort();
+ return selected.length?selected.join(', '):'Not selected';
+}
+const api={piers,types,slots,boats,extras,money,amounts,network,card,expiry,upi,cvv,localDate,available,seatLayout,validSeats,seatText};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Nautica=api;
 })(typeof window!=='undefined'?window:globalThis);
