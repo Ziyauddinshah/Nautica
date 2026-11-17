@@ -1,0 +1,1 @@
+{"name":"nautica-local-web","version":"1.0.0","private":true,"description":"Offline-first Nautica charter booking demo with no install or build step","scripts":{"dev":"node server.cjs","start":"node server.cjs","test":"node --test core.test.cjs"}}
