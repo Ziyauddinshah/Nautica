@@ -1,6 +1,3 @@
-/* Shared, dependency-free booking and validation rules. Amounts are INR paise. */
-(function(root){
-'use strict';
 const piers=['Assi Ghat','Dashashwamedh Ghat','Marina Bay','Lake Como'];
 const types=['All vessels','Wooden boat','Motor yacht','Party pontoon','Speedboat'];
 const slots=['Sunrise · 5:30 AM','Morning · 9:00 AM','Sunset · 5:00 PM','Evening · 7:30 PM'];
@@ -46,6 +43,5 @@ function seatText(boat,seats){
  const selected=[...new Set(seats.filter(id=>ids.has(id)))].sort();
  return selected.length?selected.join(', '):'Not selected';
 }
-const api={piers,types,slots,boats,extras,money,amounts,network,card,expiry,upi,cvv,localDate,available,seatLayout,validSeats,seatText};
-if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.Nautica=api;
-})(typeof window!=='undefined'?window:globalThis);
+
+export { piers, types, slots, boats, extras, money, amounts, network, card, expiry, upi, cvv, localDate, available, seatLayout, validSeats, seatText };

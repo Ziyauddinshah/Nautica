@@ -1,0 +1,88 @@
+import React from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
+import App from '../src/App.jsx';
+import { PASSES_KEY } from '../src/lib/storage.js';
+
+function startPayment() {
+  fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
+  fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+}
+async function finishPayment() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 2050)); }); }
+
+describe('React booking flow', () => {
+  it('filters the fleet and enforces one selected seat per guest', () => {
+    render(<App/>);
+    expect(screen.getAllByRole('article')).toHaveLength(8);
+    fireEvent.change(screen.getByLabelText('BOARDING PIER'), { target: { value: 'Assi Ghat' } });
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
+    fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+    expect(screen.getByRole('alert').textContent).toMatch(/choose 2 seats/);
+    const first = screen.getByRole('button', { name: /Seat 01,/ });
+    fireEvent.click(first);fireEvent.click(screen.getByRole('button', { name: /Seat 04,/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Seat 05,/ }));
+    expect(within(screen.getByRole('dialog')).getAllByRole('button', { pressed: true })).toHaveLength(2);
+    fireEvent.click(first);
+    expect(first.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: /Seat 06,/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch currency' }));
+    expect(screen.getByRole('button', { name: /Proceed to payment/ }).textContent).toContain('$15.18');
+    fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+    expect(screen.getByText(/Seats: 04, 06/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Back to your extras/ }));
+    expect(screen.getByRole('button', { name: /Seat 06,/ }).getAttribute('aria-pressed')).toBe('true');
+  });
+  it('validates UPI, saves selected seats, prevents duplicates, and reopens saved passes', async () => {
+    const view = render(<App/>);startPayment();
+    fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
+    expect(screen.getByRole('alert').textContent).toMatch(/full name/);
+    fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'आरव शर्मा · Élodie' } });
+    fireEvent.change(screen.getByLabelText('UPI ID'), { target: { value: 'bad' } });
+    fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
+    expect(screen.getByRole('alert').textContent).toMatch(/valid UPI/);
+    fireEvent.change(screen.getByLabelText('UPI ID'), { target: { value: 'alex@okaxis' } });
+    fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
+    expect(screen.getByRole('button', { name: 'Close booking' }).disabled).toBe(true);
+    await finishPayment();
+    expect(screen.getByRole('heading', { name: 'Booking confirmed.' })).toBeTruthy();
+    const saved = JSON.parse(localStorage.getItem(PASSES_KEY));
+    expect(saved).toHaveLength(1);expect(saved[0].seats).toEqual(['01','02']);
+    expect(JSON.stringify(saved)).not.toContain('alex@okaxis');
+    view.unmount();render(<App/>);
+    fireEvent.click(screen.getByRole('button', { name: /My passes/ }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ganges Dawn/ }));
+    expect(screen.getByRole('heading', { name: 'आरव शर्मा · Élodie' })).toBeTruthy();
+    expect(screen.getByText('01, 02')).toBeTruthy();
+  });
+  it('validates card expiry and stores only a method label with the last four digits', async () => {
+    render(<App/>);startPayment();
+    fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'Card Guest' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Credit / Debit' }));
+    fireEvent.change(screen.getByLabelText(/Card number/), { target: { value: '4242424242424242' } });
+    fireEvent.change(screen.getByLabelText('Cardholder name'), { target: { value: 'Card Guest' } });
+    fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '0120' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
+    expect(screen.getByText('VISA')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));
+    expect(screen.getByRole('alert').textContent).toMatch(/unexpired/);
+    fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '1299' } });
+    fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
+    const saved = localStorage.getItem(PASSES_KEY);expect(saved).not.toContain('4242424242424242');expect(JSON.parse(saved)[0].method).toBe('VISA · 4242');
+  });
+  it('handles bank search and a failed storage write without confirming a booking', async () => {
+    render(<App/>);startPayment();
+    fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'Bank Guest' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Net banking' }));
+    fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));
+    expect(screen.getByRole('alert').textContent).toMatch(/Choose your bank/);
+    fireEvent.change(screen.getByLabelText('Search banks'), { target: { value: 'Canara' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Canara Bank' }));
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
+    expect(screen.queryByRole('heading', { name: 'Booking confirmed.' })).toBeNull();
+    expect(screen.getByRole('alert').textContent).toMatch(/Could not save your pass/);
+    expect(localStorage.getItem(PASSES_KEY)).toBeNull();
+  });
+});

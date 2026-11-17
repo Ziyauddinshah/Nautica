@@ -1,42 +1,66 @@
-# Nautica
-Nautica is a seamless boat and water-charter booking platform that connects travelers with curated river, lake, and coastal vessels—featuring instant pricing, custom add-ons, multi-method checkout, and scannable digital boarding passes.
+# Nautica — React + Vite
 
-## Run locally — no Android SDK required
+A boat and water-charter booking frontend built with **React 19 and Vite**. Explore eight vessels, choose numbered seats, customize your trip, try a simulated payment, and keep a digital boarding pass.
 
-The current implementation is an offline browser demo. Extract or clone this repository and open **index.html** in a modern browser. No installation, build step, or internet connection is needed.
+## Run locally
 
-If Node.js is already installed, you can optionally run:
+Install **Node.js 22.12+** (an LTS release is recommended). No Android SDK is needed.
 
 ```sh
+git clone --branch web https://github.com/Ziyauddinshah/Nautica.git
+cd Nautica
+npm install
 npm run dev
 ```
 
-Then open **http://localhost:3000**. No `npm install` is required.
+Open **http://localhost:3000**. If that port is occupied, Vite prints the alternative URL. First installation needs internet access; the app itself makes no external API calls.
 
-Payments are simulated, exchange rates are fixed at ₹83/USD, and boarding passes are demo tickets. This version does not charge money or issue real travel credentials.
+Unlike the previous plain-JavaScript version, this React source must run through Vite. Double-clicking `index.html` will not launch it.
 
-See [LOCAL_SETUP.md](LOCAL_SETUP.md) for test payment details, offline storage behavior, PDF/share instructions, and verification limits.
+## Checks and production build
 
-## Numbered boat seating
+```sh
+npm test
+npm run build
+npm run preview
+```
 
-Select **Choose seats** on a boat to view a top-down illustrated seating plan. Seat numbers show their front/rear and left/right positions, with a separate captain position. Choose one seat per guest, or use **Choose seats for me**. Selections are included in checkout, saved passes, QR metadata, and printable/downloadable tickets.
+`npm run build` creates the static production bundle in `dist/`. Preview serves it locally. Use `npm ci` instead of `npm install` for an exact installation from the committed lockfile. `npm run test:watch` watches tests while developing.
 
-Layouts are illustrative preferences within a private charter, not shared seat inventory or verified vessel blueprints. Confirm the actual layout with the captain.
+## Included
 
-## Experience
+- Fleet filtering by destination, type, and 1–30 guests; date and time selection.
+- Top-down numbered seating diagrams with front/rear, left/right, and captain labels. One distinct seat per guest is required. Layouts are illustrative private-charter preferences; confirm actual layouts with the captain.
+- Reactive INR/USD currency, extras, and a 5% fee. The demo rate is fixed at ₹83/USD, and fares reserve the whole vessel for one hour.
+- Three validated demo payment methods: UPI/QR, live card preview with Luhn/expiry/CVV validation, and bank selection/search.
+- Two-second simulated processing, duplicate-submit protection, and storage-error handling.
+- Browser-persisted passes, Unicode QR metadata, selected seats, print/save as PDF, standalone SVG downloads, and supported native sharing.
+- Responsive maritime styling, semantic forms, keyboard-accessible seat buttons, payment tabs, and reduced-motion support.
 
-Set sail with effortless boat charters and waterfront experiences.
+Payments are simulated. No money is charged and demo tickets are not valid for real travel. QR credentials are unsigned. Live inventory, a payment provider, verified webhooks, destination timezones, and signed boarding credentials are required before real bookings.
 
-Nautica reimagines how travelers discover, customize, and book private boats and scenic water rides—from tranquil sunrise cruises at Assi Ghat and Dashashwamedh Ghat to luxury charters at Marina Bay and Lake Como. Whether you are planning a peaceful morning river tour, a sunset celebration, or a guided heritage voyage, Nautica puts the entire waterfront at your fingertips.
+## Source structure
 
-Why Travelers Choose Nautica:
+```text
+src/
+  App.jsx                  # Fleet, filters, currency, pass history
+  main.jsx                 # React entry point
+  components/
+    BoatArt.jsx            # SVG fleet illustrations
+    SeatMap.jsx            # Controlled numbered seating diagram
+    BookingDialog.jsx      # Trip → payment → confirmation state
+    PaymentForm.jsx        # Controlled inputs and validated methods
+    BoardingPass.jsx       # Pass, QR, print, export, sharing
+    TripSummary.jsx        # Shared trip and pricing components
+    QrCode.jsx              # Memoized QR renderer
+  domain/booking.js        # Fleet, pricing, seat rules, validation
+  lib/storage.js           # Legacy-compatible local persistence
+  lib/qr.js                # Locally bundled QR generator
+  lib/passExport.js        # SVG file export and share helpers
+  styles.css               # Responsive and print styles
+tests/                     # Vitest + React Testing Library tests
+```
 
-Curated Fleet Discovery: Filter vessels in real time by boarding pier, date, time slot (Sunrise, Morning, Sunset, Evening), vessel category, and guest capacity.
+This uses React state and component events throughout; it does not embed the legacy DOM controller. QR markup is the only generated SVG inserted as HTML, and it comes exclusively from the bundled QR library.
 
-Transparent, Real-Time Pricing: Switch effortlessly between INR (₹) and USD ($) with instant fare calculation, clear port fees, and zero hidden charges.
-
-Tailored Onboard Experiences: Customize your trip in one tap with optional add-ons including onboard refreshments, a local heritage guide, a professional photographer, and complimentary safety gear.
-
-Fast, Flexible Checkout: Pay securely using your preferred method—UPI / QR Scan, Credit & Debit Cards with live card preview, or Net Banking.
-
-Instant Digital Boarding Pass: Skip the ticket counter. Receive an immediate, verifiable NTC e-ticket with a scannable QR code that you can save, share, or access offline under My Pass.
+See [LOCAL_SETUP.md](LOCAL_SETUP.md) for test data, storage migration, and browser limits. The native Android source remains on the separate [`android` branch](https://github.com/Ziyauddinshah/Nautica/tree/android).

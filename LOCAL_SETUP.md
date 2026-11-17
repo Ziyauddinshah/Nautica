@@ -1,88 +1,38 @@
-# Nautica — local browser edition
+# Running and testing Nautica React
 
-No Android SDK. No emulator. No build step. No npm installation. No internet needed.
+## Development
 
-## Easiest way to run
+Use Node.js 22.12 or newer, then run `npm install` and `npm run dev`. Open the URL Vite prints (normally http://localhost:3000). No Android SDK or emulator is required. Package installation needs internet; once installed, the app and bundled assets have no runtime external dependencies. A service worker is not included, so reopening a remote website while offline is not guaranteed.
 
-1. Extract `Nautica-web.zip` into a folder. Do not open files inside the ZIP preview.
-2. Double-click `index.html` in the extracted folder.
-3. Use a current Chrome, Edge, Firefox, or Safari browser.
+To check a production build, run `npm run build` then `npm run preview`. Serve the resulting `dist/` directory through a static web server; do not open its HTML via file://. The Vite relative base supports deployment under a subdirectory. Production hosting is not configured by this migration.
 
-Keep the `vendor` folder and all other files together. Everything is bundled locally, including the QR generator. The app does not contact any external service.
+## Demo booking
 
-## Optional localhost mode
+1. Click **Choose seats** on a vessel.
+2. Choose one seat per guest, or click **Choose seats for me**.
+3. Choose your extras and proceed to payment.
+4. Enter a lead guest name and use one of these test methods:
+   - UPI: `alex@okaxis`.
+   - Card: `4242 4242 4242 4242`, any cardholder name, a future MM/YY, and a three-digit CVV.
+   - Net banking: choose a supported bank; the search includes other banks.
+5. After the two-second simulation, open **My passes** to reopen the saved ticket.
 
-If your browser blocks storage on `file://` pages, use localhost. If Node.js 20+ is already installed, open a terminal in this folder and run:
+Use test details, not real payment credentials. No UPI apps are launched, no bank is contacted, and the payment QR is a marked demo payload. Numbered seat diagrams are illustrative preferences inside a private charter, not shared inventory or verified vessel blueprints.
 
-```sh
-node server.cjs
-```
+## Persistence and migration
 
-Then open **http://localhost:3000**. You can also use `npm run dev`; no `npm install` is needed. The server binds only to your own computer. Press Ctrl+C to stop.
+The React version retains `nautica.web.currency` and `nautica.web.passes`, the previous app's local-storage keys. Existing valid passes remain available when served from the **same browser origin** (scheme, hostname, port). Older passes without seat assignments show **Not selected**. Storage writes merge current saved passes to retain bookings made in other tabs.
 
-If Python is already installed, an alternative is:
+File://, localhost, 127.0.0.1, and different ports have different storage contexts. Data from the old file:// page does not automatically transfer to localhost. Clearing browser data removes bookings; private browsing may discard them on exit. Bookings do not sync to other devices or the native Android app.
 
-```sh
-python -m http.server 3000 --bind 127.0.0.1
-```
+Only lead guest, trip, seat choices, extras, total, and a method label are saved. Full PAN, CVV, cardholder input, and UPI ID remain transient React state and are discarded when checkout closes or succeeds. Storage is not encrypted. A storage failure prevents a false booking confirmation. Unfinished checkout is not restored after a reload.
 
-Then open the same address. Neither option needs the Android SDK.
+## Pass export
 
-## Features
+**Print / Save as PDF** opens the browser print dialog. Select Save as PDF if available. **Download pass** creates a standalone SVG with the QR embedded and grows to fit long seat lists. **Share pass** uses supported system sharing, otherwise downloads the file for attachment to email or WhatsApp. Sharing varies by device and browser.
 
-- Eight vessels across Assi Ghat, Dashashwamedh Ghat, Marina Bay, and Lake Como.
-- Destination, date, time, vessel-type and 1–30 guest filters with live availability.
-- INR/USD currency switch in the main header and inside checkout.
-- Numbered top-down seating diagrams with selectable positions, a separate captain position, and one seat required per guest.
-- Included safety kit and three optional extras with a 5% fee and live totals.
-- UPI/QR preview, validated interactive card preview, and net-banking selection/search.
-- Two-second simulated checkout with duplicate-submit protection.
-- Saved local boarding passes, Unicode QR metadata, print/save as PDF, downloadable SVG tickets, and native file sharing when supported.
-- Responsive layouts and reduced-motion support.
+## Validation limits
 
-## Try a booking
+Vitest checks domain rules and React interactions using jsdom: filters, seat limits, currency, checkout validation, all three methods, persistence, and storage failure. The production bundle is verified by Vite. No graphical browser tool is available in this workspace, so visual layout, real QR scanning, actual print dialogs, OS sharing, and device behavior still need browser acceptance testing.
 
-Select **Choose seats** on **Ganges Dawn**, choose one seat per guest (or **Choose seats for me**), choose extras, then use:
-
-- Lead guest: any name with at least two characters.
-- UPI: `alex@okaxis`, or
-- Card: `4242 4242 4242 4242`, a future `MM/YY`, any cardholder name, and a three-digit CVV, or
-- Net banking: choose one of the provided banks.
-
-Do not enter real card details. All payment methods are simulations; no money is charged. App buttons do not open real payment apps, and the preview payment QR is not a payable merchant request. Boarding passes are demonstration tickets, not valid for real travel.
-
-Amounts are stored in integer INR paise, using a fixed **₹83 = US$1** demonstration rate. Fares reserve the whole boat for one hour. Guest count changes vessel availability rather than the flat vessel fare.
-
-## Saving and sharing
-
-Bookings and currency are saved in this browser's local storage. Clearing browser data removes them. Private browsing may remove them on exit. File-page storage support varies by browser; keep the app at the same path, or use the optional localhost mode for a consistent origin. Data does not sync between browsers, ports, devices, or the native Android app.
-
-Use **Print / Save as PDF** and choose your browser's Save as PDF destination. The downloaded SVG is a standalone scalable ticket with its QR embedded. Native sharing depends on browser/device support; the fallback downloads the pass so you can attach it to email or WhatsApp.
-
-Only lead guest, trip information, totals, and a payment-method label are saved. Full card number, CVV, cardholder field, and UPI ID stay in transient page memory and are cleared after checkout or closing the flow. Saved data is not encrypted. This is a local demo; its unsigned QR credentials are not suitable for real boarding verification.
-
-Dates/times use the device's calendar context. A real multi-destination service needs destination timezones, server inventory, authoritative pricing, signed passes, and verified provider payments.
-
-## Checks
-
-Run dependency-free tests, if Node.js is available:
-
-```sh
-npm test
-```
-
-Fifteen core tests passed: fleet/filter combinations, fee arithmetic, currency conversion, UPI/card/expiry/CVV validation, local date handling, international-text QR generation, offline asset completeness, numbered layouts, seat-count validation, and legacy pass compatibility. JavaScript syntax checks passed. Additional DOM integration checks exercised all three payment modes, rejected invalid inputs, extras, currency switching inside checkout, Unicode passenger data, storage, QR rendering, and reopening passes after reload. The temporary DOM testing dependencies are not needed or included in this app.
-
-No graphical browser tool was available in the delivery environment. Visual layout, actual QR scanning, browser printing, OS file sharing, and mobile device behavior remain to be checked in a real browser. No hosting or public deployment was performed.
-
-## Files
-
-- `index.html`: entry page
-- `styles.css`: layout, design, responsiveness, and print layout
-- `core.js`: domain data, pricing, filtering, and payment validation
-- `app.js`: UI and browser persistence
-- `vendor/qrcode.js`: bundled MIT-licensed QR generator; see `vendor/LICENSE.qrcode`
-- `server.cjs`: optional dependency-free local server
-- `core.test.cjs`: Node test suite
-
-Seating plans are illustrative preferences within private charters. They do not model shared seat inventory. Your captain must confirm the actual vessel layout. Older passes created before seat selection show **Not selected** instead of inventing seat assignments.
+Dates/times use the device calendar context. Exchange rates are fixed at ₹83/USD, and fares are flat private-vessel prices. This is a frontend demonstration, not an inventory or payment service.

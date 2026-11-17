@@ -1,1 +1,17 @@
-{"name":"nautica-local-web","version":"1.0.0","private":true,"description":"Offline-first Nautica charter booking demo with no install or build step","scripts":{"dev":"node server.cjs","start":"node server.cjs","test":"node --test core.test.cjs"}}
+{
+  "name": "nautica-react",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nautica boat booking frontend built with React and Vite",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 3000",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": { "react": "^19.2.0", "react-dom": "^19.2.0", "qrcode-generator": "1.4.4" },
+  "devDependencies": { "@vitejs/plugin-react": "^5.1.1", "vite": "^7.2.2", "vitest": "^4.0.8", "jsdom": "^27.2.0", "@testing-library/react": "^16.3.0", "@testing-library/user-event": "^14.6.1" }
+}
