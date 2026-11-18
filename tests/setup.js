@@ -1,6 +1,8 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { installApiMock } from './apiMock.js';
 import { cleanup } from '@testing-library/react';
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+beforeEach(()=>installApiMock());
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 HTMLDialogElement.prototype.close = function () { this.open = false; };
 Element.prototype.scrollIntoView = vi.fn();

@@ -7,3 +7,8 @@ Thumbs.db
 dist/
 coverage/
 .vite/
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+!.env.example

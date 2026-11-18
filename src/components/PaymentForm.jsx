@@ -4,9 +4,11 @@ import { PriceBreakdown, TripSummary } from './TripSummary.jsx';
 import QrCode from './QrCode.jsx';
 
 export const banks = ['SBI', 'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Bank of Baroda', 'Canara Bank', 'Kotak Mahindra', 'Punjab National Bank', 'Union Bank'];
-export const emptyDraft = () => ({ name: '', upi: '', number: '', holder: '', expiry: '', cvv: '', bank: '', tab: 'upi', app: 'GPay' });
+export const emptyDraft = () => ({ name: '', email: '', phone: '', upi: '', number: '', holder: '', expiry: '', cvv: '', bank: '', tab: 'upi', app: 'GPay' });
 export function validatePayment(draft, tab) {
   if (draft.name.trim().length < 2) return ['name', 'Enter the lead guest’s full name.'];
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) return ['email', 'Enter a valid email address.'];
+  if (!/^\+?[\d ()-]{7,25}$/.test(draft.phone.trim()) || draft.phone.replace(/\D/g, '').length < 7 || draft.phone.replace(/\D/g, '').length > 15) return ['phone', 'Enter a valid contact phone number.'];
   if (tab === 'upi' && !N.upi(draft.upi)) return ['upi', 'Enter a valid UPI ID, for example alex@okaxis.'];
   if (tab === 'card') {
     if (!N.card(draft.number)) return ['number', 'Enter a valid card number. Use the test card shown above.'];
@@ -29,8 +31,7 @@ export default function PaymentForm({ boat, trip, currency, draft, onDraft, onPa
     event.preventDefault();
     const problem = validatePayment(draft, tab);
     if (problem) { setInvalid(problem); formRef.current.elements.namedItem(problem[0])?.focus(); return; }
-    const method = tab === 'upi' ? `UPI · ${app}` : tab === 'card' ? `${N.network(draft.number)} · ${draft.number.slice(-4)}` : `Net banking · ${draft.bank}`;
-    onPay(draft.name.trim(), method);
+    onPay({ name: draft.name.trim(), email: draft.email.trim(), phone: draft.phone.trim(), payment: tab === 'upi' ? { type: tab, provider: app } : tab === 'card' ? { type: tab, network: N.network(draft.number), last4: draft.number.slice(-4) } : { type: tab, bank: draft.bank } });
   }
   function changeTab(next) { onDraft({ ...draft, tab: next, cvv: '' }); setInvalid(null); }
   const fieldProps = key => ({ name: key, value: draft[key], 'aria-invalid': invalid?.[0] === key || undefined, onChange: event => patch(key, event.target.value) });
@@ -39,6 +40,7 @@ export default function PaymentForm({ boat, trip, currency, draft, onDraft, onPa
     <TripSummary boat={boat} trip={trip}/>
     <form ref={formRef} onSubmit={submit} noValidate>
       <label className="field">Lead guest name<input {...fieldProps('name')} autoComplete="name" maxLength={80} placeholder="Your full name"/></label>
+      <div className="two-fields"><label className="field">Email address<input {...fieldProps('email')} type="email" autoComplete="email" maxLength={150} placeholder="you@example.com"/></label><label className="field">Phone number<input {...fieldProps('phone')} type="tel" autoComplete="tel" maxLength={25} placeholder="+91 98765 43210"/></label></div>
       <div className="tabs" role="tablist" aria-label="Payment method">{[['upi', 'UPI / QR'], ['card', 'Credit / Debit'], ['bank', 'Net banking']].map(([id, title], index, all) => <button key={id} id={`tab-${id}`} type="button" role="tab" aria-controls="payment-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => changeTab(id)} onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();

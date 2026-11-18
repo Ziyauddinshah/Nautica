@@ -1,23 +1,27 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, fireEvent, act, waitFor } from '@testing-library/react';
 import App from '../src/App.jsx';
 import { PASSES_KEY } from '../src/lib/storage.js';
 
-function startPayment() {
+async function startPayment() {
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose seats for me'}).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
   fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+  fireEvent.change(screen.getByLabelText('Email address'),{target:{value:'guest@example.com'}});
+  fireEvent.change(screen.getByLabelText('Phone number'),{target:{value:'+919876543210'}});
 }
 async function finishPayment() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 2050)); }); }
 
 describe('React booking flow', () => {
-  it('filters the fleet and enforces one selected seat per guest', () => {
+  it('filters the fleet and enforces one selected seat per guest', async () => {
     render(<App/>);
     expect(screen.getAllByRole('article')).toHaveLength(8);
     fireEvent.change(screen.getByLabelText('BOARDING PIER'), { target: { value: 'Assi Ghat' } });
     expect(screen.getAllByRole('article')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
+    await waitFor(()=>expect(screen.getByRole('button',{name:/Seat 01,/}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
     expect(screen.getByRole('alert').textContent).toMatch(/choose 2 seats/);
     const first = screen.getByRole('button', { name: /Seat 01,/ });
@@ -35,7 +39,7 @@ describe('React booking flow', () => {
     expect(screen.getByRole('button', { name: /Seat 06,/ }).getAttribute('aria-pressed')).toBe('true');
   });
   it('validates UPI, saves selected seats, prevents duplicates, and reopens saved passes', async () => {
-    const view = render(<App/>);startPayment();
+    const view = render(<App/>);await startPayment();
     fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
     expect(screen.getByRole('alert').textContent).toMatch(/full name/);
     fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'आरव शर्मा · Élodie' } });
@@ -57,7 +61,7 @@ describe('React booking flow', () => {
     expect(screen.getByText('01, 02')).toBeTruthy();
   });
   it('validates card expiry and stores only a method label with the last four digits', async () => {
-    render(<App/>);startPayment();
+    render(<App/>);await startPayment();
     fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'Card Guest' } });
     fireEvent.click(screen.getByRole('tab', { name: 'Credit / Debit' }));
     fireEvent.change(screen.getByLabelText(/Card number/), { target: { value: '4242424242424242' } });
@@ -71,8 +75,8 @@ describe('React booking flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
     const saved = localStorage.getItem(PASSES_KEY);expect(saved).not.toContain('4242424242424242');expect(JSON.parse(saved)[0].method).toBe('VISA · 4242');
   });
-  it('handles bank search and a failed storage write without confirming a booking', async () => {
-    render(<App/>);startPayment();
+  it('keeps server-confirmed booking valid even when the browser offline cache is full', async () => {
+    render(<App/>);await startPayment();
     fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'Bank Guest' } });
     fireEvent.click(screen.getByRole('tab', { name: 'Net banking' }));
     fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));
@@ -81,8 +85,8 @@ describe('React booking flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Canara Bank' }));
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
-    expect(screen.queryByRole('heading', { name: 'Booking confirmed.' })).toBeNull();
-    expect(screen.getByRole('alert').textContent).toMatch(/Could not save your pass/);
+    expect(screen.getByRole('heading', { name: 'Booking confirmed.' })).toBeTruthy();
+    expect(screen.getByText(/offline copy could not be saved/)).toBeTruthy();
     expect(localStorage.getItem(PASSES_KEY)).toBeNull();
   });
 });

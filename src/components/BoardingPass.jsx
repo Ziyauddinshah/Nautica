@@ -15,6 +15,7 @@ export default function BoardingPass({ booking, currency, confirmed, onExplore }
   return <>
     {confirmed && <div className="success-icon" aria-hidden="true">✓</div>}
     <p className="steps">{confirmed ? '03 / READY TO SET SAIL' : 'YOUR SAVED VOYAGE'}</p><h2 id="flow-title" className="dialog-title">{confirmed ? 'Booking confirmed.' : 'Your boarding pass.'}</h2><p className="subtitle">Saved in this browser. Ready whenever you are.</p>
+    {!booking.serverConfirmed && <p className="demo-note">Legacy local demo pass — not registered in the current server seat inventory.</p>}
     <div className="ticket"><div className="ticket-head"><strong>⚓ NAUTICA</strong><span>DIGITAL BOARDING PASS</span></div><div className="ticket-main"><p className="eyebrow">{booking.id}</p><h3>{booking.name}</h3>
       <div className="ticket-grid">{fields.map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}<div className="ticket-seats"><small>SEAT NUMBERS</small><strong>{seatText(boat, booking.seats)}</strong></div></div>
       <div className="perforation"/><p className="demo-note">{extras.filter(extra => booking.extras.includes(extra.id)).map(extra => extra.name).join(' · ')}</p>
