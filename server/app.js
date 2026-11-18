@@ -1,9 +1,10 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
+import { notificationsFor } from './email.js';
 import { ApiError, availability, createBooking, login, authenticate, adminBookings, digest } from './store.js';
 
-export function createApp(db, { mode = 'seats', production = false, publicOrigin = '' } = {}) {
+export function createApp(db, { mode = 'seats', production = false, publicOrigin = '', emailService = null } = {}) {
   const attempts = new Map();
   function token(req) { return (req.headers.cookie || '').split(';').map(v=>v.trim()).find(v=>v.startsWith('nautica_admin='))?.slice(14); }
   function cookie(value, maxAge=28800) {return `nautica_admin=${value}; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=${maxAge}${production?'; Secure':''}`;}
@@ -23,7 +24,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         };
         if(req.method==='GET'&&url.pathname==='/api/health')return send(200,{ok:true});
         if(req.method==='GET'&&url.pathname==='/api/availability')return send(200,{...availability(db,Object.fromEntries(url.searchParams)),mode});
-        if(req.method==='POST'&&url.pathname==='/api/bookings')return send(201,{booking:createBooking(db,await body(),mode)});
+        if(req.method==='POST'&&url.pathname==='/api/bookings'){const booking=createBooking(db,await body(),mode);emailService?.kick();return send(201,{booking});}
         if(req.method==='POST'&&url.pathname==='/api/admin/login'){
           const key=req.socket.remoteAddress,now=Date.now();
           for(const [key,value]of attempts)if(now-value.since>900000)attempts.delete(key);
@@ -36,7 +37,9 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         if(url.pathname.startsWith('/api/admin/')){
           const username=authenticate(db,token(req));
           if(req.method==='GET'&&url.pathname==='/api/admin/session')return send(200,{username});
-          if(req.method==='GET'&&url.pathname==='/api/admin/bookings')return send(200,adminBookings(db,Object.fromEntries(url.searchParams)));
+          if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=adminBookings(db,Object.fromEntries(url.searchParams));return send(200,{...data,bookings:data.bookings.map(record=>({...record,notifications:notificationsFor(db,record.id)})),emailService:emailService?.status()||{configured:false,reason:'Gmail SMTP is not configured.'}});}
+          const retryMatch=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/emails\/retry$/);
+          if(req.method==='POST'&&retryMatch){if(!emailService?.status().configured)throw new ApiError(503,'Configure Gmail SMTP on the server before retrying email.');if(!db.prepare('SELECT id FROM bookings WHERE id=?').get(retryMatch[1]))throw new ApiError(404,'Booking not found.');emailService.retry(retryMatch[1]);return send(200,{ok:true});}
           if(req.method==='POST'&&url.pathname==='/api/admin/logout'){db.prepare('DELETE FROM sessions WHERE token_hash=?').run(digest(token(req)));return send(200,{ok:true},{'Set-Cookie':cookie('',0)});}
         }
         throw new ApiError(404,'Endpoint not found.');

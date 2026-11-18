@@ -16,6 +16,8 @@ export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nau
     CREATE TABLE IF NOT EXISTS seats(boat_id TEXT, date TEXT, slot TEXT, seat TEXT, booking_id TEXT REFERENCES bookings(id), PRIMARY KEY(boat_id,date,slot,seat));
     CREATE TABLE IF NOT EXISTS admins(username TEXT PRIMARY KEY, salt TEXT NOT NULL, hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT REFERENCES admins(username), expires INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS email_outbox(id INTEGER PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), audience TEXT NOT NULL CHECK(audience IN ('customer','admin')), recipient TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, lease_until INTEGER NOT NULL DEFAULT 0, message_id TEXT, last_error_code TEXT, sent_at TEXT, UNIQUE(booking_id,audience));
+    CREATE INDEX IF NOT EXISTS email_due ON email_outbox(status,next_attempt_at);
     CREATE INDEX IF NOT EXISTS trip_bookings ON bookings(boat_id,date,slot);`);
   return db;
 }
@@ -68,11 +70,13 @@ export function createBooking(db, input, mode = 'seats') {
     const createdAt = new Date().toISOString();
     const pricing = N.amounts(boat, extras);
     const paymentInfo = { ...payment, status: 'demo_paid', reference: `DEMO-${randomUUID()}`, paidAt: createdAt, amount: pricing.total, currency: 'INR' };
-    const pass = { id, boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, extras, total: pricing.total, currencyBase: 'INR', method: payment.method, paymentStatus: 'demo_paid', paymentReference: paymentInfo.reference, createdAt, serverConfirmed: true };
+    const pass = { id, boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, extras, total: pricing.total, currencyBase: 'INR', method: payment.method, paymentStatus: 'demo_paid', paymentReference: paymentInfo.reference, createdAt, serverConfirmed: true, emailStatus: 'requested' };
     const record = { id, status: 'confirmed', createdAt, bookingMode: mode, customer: { name, email, phone }, boat: { ...boat }, trip: { date: input.date, slot: input.slot, guests: input.guests, seats }, extras, pricing, payment: paymentInfo, pass };
     db.prepare('INSERT INTO bookings VALUES(?,?,?,?,?,?,?,?)').run(id, input.requestKey, hash, boat.id, input.date, input.slot, createdAt, JSON.stringify(record));
     const reserve = db.prepare('INSERT INTO seats VALUES(?,?,?,?,?)');
     for (const seat of (mode === 'private' ? N.seatLayout(boat).map(seat => seat.id) : seats)) reserve.run(boat.id,input.date,input.slot,seat,id);
+    const queue=db.prepare('INSERT INTO email_outbox(booking_id,audience,recipient) VALUES(?,?,?)');
+    queue.run(id,'customer',email);queue.run(id,'admin',null);
     db.exec('COMMIT');return pass;
   } catch (error) { db.exec('ROLLBACK');throw error; }
 }

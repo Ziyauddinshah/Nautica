@@ -16,19 +16,22 @@
     "server": "node --env-file-if-exists=.env server/index.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "admin:create": "node --env-file-if-exists=.env scripts/admin-create.js",
-    "test:server": "node --test server/*.test.js"
+    "test:server": "node --test server/*.test.js",
+    "email:verify": "node --env-file-if-exists=.env scripts/email-verify.js"
   },
   "dependencies": {
+    "nodemailer": "^10.6.0",
+    "qrcode-generator": "1.4.4",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "qrcode-generator": "1.4.4"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.1",
-    "vite": "^7.2.2",
-    "vitest": "^4.0.8",
-    "jsdom": "^27.2.0",
     "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.1"
+    "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^5.1.1",
+    "jsdom": "^27.2.0",
+    "smtp-server": "^3.21.6",
+    "vite": "^7.2.2",
+    "vitest": "^4.0.8"
   }
 }

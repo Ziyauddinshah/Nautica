@@ -12,9 +12,9 @@ const date=()=>{const d=new Date();d.setDate(d.getDate()+2);return N.localDate(d
 const input=(patch={})=>({boatId:'b1',date:date(),slot:N.slots[0],guests:2,seats:['01','02'],name:'Guest One',email:'guest@example.com',phone:'+919876543210',extras:['safety'],payment:{type:'upi',provider:'GPay'},requestKey:randomUUID(),...patch});
 const resources=[];
 after(()=>{for(const cleanup of resources.reverse())cleanup();});
-async function fixture(){
+async function fixture(options={}){
  const db=openStore(':memory:');setAdmin(db,'admin','a-long-test-password');
- const server=createApp(db);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const server=createApp(db,options);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+server.address().port;
  resources.push(()=>{server.closeAllConnections();server.close();db.close();});
  const call=async(path,{method='GET',body,cookie,origin=base}={})=>{
@@ -71,4 +71,15 @@ test('admin setup CLI creates an account without embedding a default credential'
  const output=execFileSync(process.execPath,['scripts/admin-create.js'],{cwd:process.cwd(),env:{...process.env,NAUTICA_DB:filename,NAUTICA_ADMIN_USER:'setup-admin',NAUTICA_ADMIN_PASSWORD:password},encoding:'utf8'});
  assert.match(output,/setup-admin is ready/);assert.ok(!output.includes(password));
  const db=openStore(filename);assert.ok(db.prepare('SELECT username FROM admins WHERE username=?').get('setup-admin'));assert.equal(db.prepare('SELECT hash FROM admins').get().hash.includes(password),false);db.close();rmSync(directory,{recursive:true,force:true});
+});
+
+test('email retry requires admin authentication and never resets already-sent messages',async()=>{
+ let kicked=0;
+ const emailService={status:()=>({configured:true,adminRecipient:'admin@example.test'}),kick:()=>{kicked++;},retry:()=>{kicked++;}};
+ const {call,db}=await fixture({emailService});const created=await call('/api/bookings',{method:'POST',body:input()});assert.equal(kicked,1);
+ const endpoint=`/api/admin/bookings/${created.data.booking.id}/emails/retry`;
+ assert.equal((await call(endpoint,{method:'POST',body:{}})).status,401);
+ const signed=await call('/api/admin/login',{method:'POST',body:{username:'admin',password:'a-long-test-password'}});
+ assert.equal((await call(endpoint,{method:'POST',body:{},cookie:signed.cookie})).status,200);assert.equal(kicked,2);
+ const listed=await call('/api/admin/bookings',{cookie:signed.cookie});assert.equal(listed.data.bookings[0].notifications.length,2);assert.equal(listed.data.emailService.configured,true);
 });

@@ -47,11 +47,39 @@ SQLite stores authoritative bookings, occupied seats, admin password hashes and 
 
 Each browser keeps an additional offline pass copy using the previous app's storage keys. Legacy local-only passes still open, but they are **not imported into server inventory or admin records**. New availability and admin views work only when browsers connect to the same backend/database. A backend is required to book; static-only hosting is no longer sufficient.
 
+## Gmail SMTP booking confirmations
+
+Every new confirmed booking queues **two separate emails** in SQLite: one for the customer address entered at checkout and one for the configured administrator. Email includes the booking reference, passenger name, boat/pier, date/time, selected seats, add-ons, price breakdown and demo payment summary. The admin message additionally includes passenger email/phone and an admin-dashboard link when `PUBLIC_ORIGIN` is configured.
+
+1. Copy `.env.example` to a private `.env` file.
+2. In your Google account, enable 2-Step Verification and create an **App Password** for this app. Do not use your normal Gmail password or paste the App Password into chat/GitHub.
+3. Set these values locally:
+
+```dotenv
+SMTP_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=youraccount@gmail.com
+SMTP_PASS=your_google_app_password
+SMTP_ADMIN_TO=admin@example.com
+```
+
+`SMTP_USER` is the sender; `SMTP_ADMIN_TO` is the admin notification recipient. They may be the same account. Google Workspace policy may restrict App Password availability; this implementation uses Gmail SMTP with an App Password, not OAuth.
+
+Run `npm run email:verify` to check TLS/authentication without sending any email, then restart `npm run dev` or `npm start`. Port 465 uses TLS; port 587 uses mandatory STARTTLS with certificate verification enabled. SMTP settings are read only by the backend and must never use a `VITE_` prefix.
+
+Email sending is disabled by default. New bookings still queue notifications while disabled, so **enabling SMTP will process pending messages** created after this feature was installed. Pre-existing bookings from before the email feature are not automatically emailed. Booking success does not depend on email success.
+
+The worker retries failed messages up to five times with backoff, keeps separate customer/admin status, and resumes pending work after restart. The admin booking details display statuses and a **Retry failed emails** button once SMTP is configured. That button does not resend already-sent messages. `SMTP accepted` means the SMTP server accepted the message, not proof of inbox delivery; spam filtering, bounces and Gmail quotas may still apply. A process crash after SMTP accepts a message but before SQLite records it can cause a duplicate on recovery; stable Message-IDs help deduplication but do not guarantee exactly-once delivery.
+
+The app sends text and HTML email without attachments. Pass download/PDF sharing remains available in the customer UI. All emails clearly state that payment is simulated and the ticket is a demo.
+
 ## Commands
 
 ```sh
 npm test                  # React/domain tests and real HTTP/SQLite backend tests
 npm run build             # Production frontend bundle
+npm run email:verify      # Verify Gmail SMTP without sending a message
 npm run server            # Backend only (development mode)
 npm run preview           # Vite preview; run backend separately
 npm start                 # Serve dist/ and API together, default port 3001
@@ -65,6 +93,6 @@ Optional settings are documented in [.env.example](.env.example). Configure `PUB
 
 Payments remain **simulated**. The `demo_paid` status and `DEMO-` references are not bank/provider confirmations, no money is charged, and tickets are not valid for real travel. Integrate a real provider with verified callbacks before accepting payments. Seat diagrams remain illustrative and require confirmation against actual vessel plans. Customer accounts, contact verification, cancellation/refund flows and multi-instance database hosting are not implemented.
 
-Tests cover seat blocking, conflicts, retries, persistence, server-calculated totals, protected admin access, login/logout, session cookies, login throttling, origin checks, customer validation, React seat states, checkout and admin views. Graphical browser, print dialogs and device sharing still require manual acceptance checks.
+Tests cover seat blocking, conflicts, retries, persistence, server-calculated totals, protected admin access, login/logout, session cookies, login throttling, origin checks, customer validation, React seat states, checkout and admin views. Email tests cover separate recipients, HTML escaping, disabled configuration, retries, retry exhaustion, restart recovery and a real Nodemailer exchange against a local-only test SMTP server. Live Gmail authentication/delivery requires your own configuration and has not been verified in this workspace. Graphical browser, print dialogs and device sharing still require manual acceptance checks.
 
 Source: `src/` (React), `server/` (Node HTTP + SQLite), `scripts/` (startup/admin setup), `tests/` and `server/*.test.js`. The native Android app remains on the separate [`android` branch](https://github.com/Ziyauddinshah/Nautica/tree/android).

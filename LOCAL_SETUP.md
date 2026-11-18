@@ -47,3 +47,20 @@ For a built app, run `npm run build` then `npm start` and open http://localhost:
 ## Verification
 
 `npm test` runs Vitest/jsdom React tests and Node HTTP/SQLite tests. `npm run build` checks the production bundle. Graphical browser layout, actual printing, real QR scanning and OS sharing still require manual checks. Payment integration, verified customer identity/contact details, signed boarding credentials and actual vessel blueprints remain outside this demo.
+
+
+## Gmail email setup and acceptance checks
+
+Copy `.env.example` to `.env` and set `SMTP_ENABLED=true`, `SMTP_USER` to the sender Gmail address, `SMTP_PASS` to a Google App Password, and `SMTP_ADMIN_TO` to the admin recipient. Keep the default `SMTP_HOST=smtp.gmail.com` and `SMTP_PORT=465`, or use port 587 for mandatory STARTTLS. Normal Gmail passwords are not supported by this setup. Never commit `.env` or add SMTP credentials to Vite frontend variables.
+
+1. Run `npm run email:verify`; success verifies connection/authentication only, not inbox delivery.
+2. Restart the app server to load the SMTP settings.
+3. Make a new booking with an email address you control. Expect a customer confirmation at that address and a separate admin confirmation at `SMTP_ADMIN_TO`.
+4. In `/admin`, refresh the booking and check each recipient's email status, attempt count and sent timestamp. Open the message and verify boat, date/time, seats, extras, total and the clear simulated-payment notice.
+5. To test failure safely, use invalid SMTP credentials on a local test instance. The booking must still confirm and reserve its seats. Status should become failed with a generic error code; the queue retries with backoff. Fix credentials, restart, and use **Retry failed emails** in admin details if needed.
+
+The queue is part of the same database transaction as the reservation. Repeating an idempotent booking request does not create new email jobs. Two roles are tracked separately even if the admin and customer email happen to be the same address. Customer messages omit admin-only contact summaries and admin links. Full card numbers, CVVs and UPI IDs are never included.
+
+Pending email jobs created after this feature was installed are processed when SMTP becomes configured, including after a restart. Older bookings without queue records show **Not queued (older booking)**. Sent messages cannot be resent with the failed-email retry button. Automatic delivery is at-least-once after process recovery; an SMTP-accepted message may be duplicated if the process stops before recording the success. A stable Message-ID is reused, but recipient providers control deduplication. The single-process worker does not provide bounce webhooks or inbox-delivery tracking.
+
+SMTP error details are reduced to safe codes in the admin panel; secrets and raw provider responses are not logged. Successful `SMTP accepted` status does not guarantee inbox placement. Check spam folders and account sending limits. App Passwords usually require Google 2-Step Verification and may be restricted by your account's administrator. No actual Gmail email was sent during automated tests: SMTP integration tests bind a local test server and use test-only recipients.
