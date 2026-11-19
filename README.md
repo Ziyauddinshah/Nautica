@@ -45,7 +45,7 @@ Reset links require both working Gmail SMTP and a trusted `PUBLIC_ORIGIN` in `.e
 PUBLIC_ORIGIN=http://localhost:3000
 ```
 
-For deployment use the actual **HTTPS origin**, e.g. `PUBLIC_ORIGIN=https://nautica.example.com`, and restart the server. The origin must not contain credentials, paths, query strings or fragments. HTTP is accepted only for local development. The app never constructs reset links from an untrusted Host header or a redirect supplied by a requester. The admin panel reports when reset delivery is disabled because origin configuration is missing.
+For deployment use the actual **HTTPS origin**, e.g. `PUBLIC_ORIGIN=https://nautica.example.com`, and restart the server. The origin must not contain credentials, paths, query strings or fragments. HTTP is accepted only for local development. The app never constructs reset links from an untrusted Host header or a redirect supplied by a requester. The client displays only general email availability. Server operators can use `npm run email:verify` and the setup instructions to check origin configuration.
 
 Reset tokens are random 256-bit values stored only as hashes in SQLite. The email link carries the token in a URL fragment, which is not sent in the page request; the frontend removes it from the address bar before React mounts and keeps it only in memory for submission. Reloading the cleaned page requires reopening the email link or requesting another one. Tokens are not placed in browser storage, API responses, application logs, booking QR codes or admin records.
 
@@ -101,7 +101,7 @@ Run `npm run email:verify` to check TLS/authentication without sending any email
 
 Email sending is disabled by default. New bookings still queue notifications while disabled, so **enabling SMTP will process pending messages** created after this feature was installed. Pre-existing bookings from before the email feature are not automatically emailed. Booking success does not depend on email success.
 
-The worker retries failed messages up to five times with backoff, keeps separate customer/admin status, and resumes pending work after restart. The admin booking details display statuses and a **Retry failed emails** button once SMTP is configured. That button does not resend already-sent messages. `SMTP accepted` means the SMTP server accepted the message, not proof of inbox delivery; spam filtering, bounces and Gmail quotas may still apply. A process crash after SMTP accepts a message but before SQLite records it can cause a duplicate on recovery; stable Message-IDs help deduplication but do not guarantee exactly-once delivery.
+The worker retries failed messages up to five times with backoff, keeps separate customer/admin status, and resumes pending work after restart. The admin booking details display statuses and a **Retry failed emails** button once SMTP is configured. That button does not resend already-sent messages. `Sent` means the SMTP server accepted the message, not proof of inbox delivery; spam filtering, bounces and Gmail quotas may still apply. A process crash after SMTP accepts a message but before SQLite records it can cause a duplicate on recovery; stable Message-IDs help deduplication but do not guarantee exactly-once delivery.
 
 The app sends text and HTML email without attachments. Pass download/PDF sharing remains available in the customer UI. All emails clearly state that payment is simulated and the ticket is a demo.
 
@@ -127,3 +127,16 @@ Payments remain **simulated**. The `demo_paid` status and `DEMO-` references are
 Tests cover seat blocking, conflicts, retries, persistence, server-calculated totals, protected admin access, login/logout, session cookies, login throttling, origin checks, customer validation, React seat states, checkout and admin views. Email tests cover separate recipients, HTML escaping, disabled configuration, retries, retry exhaustion, restart recovery and a real Nodemailer exchange against a local-only test SMTP server. Live Gmail authentication/delivery requires your own configuration and has not been verified in this workspace. Graphical browser, print dialogs and device sharing still require manual acceptance checks.
 
 Source: `src/` (React), `server/` (Node HTTP + SQLite), `scripts/` (startup/admin setup), `tests/` and `server/*.test.js`. The native Android app remains on the separate [`android` branch](https://github.com/Ziyauddinshah/Nautica/tree/android).
+
+
+## Readability and client data minimization
+
+The interface uses an 18px base reading size, larger form controls and action text, 14px minimum fine print, and rem-based font sizes that follow browser preferences. Buttons have larger tap targets, mobile fleet cards use one column, and downloaded SVG passes use larger wrapping text. Graphical browser layout review is still required; automated checks do not substitute for device/zoom testing.
+
+Vite development file access explicitly denies environment files, database/WAL/SHM files (including the configured custom path), certificate/key files, and server/scripts directories. The production server serves only `dist/`.
+
+Customer and admin JSON views use explicit field allowlists instead of serializing database/service objects. They retain the authorized booking/contact/payment summaries each role needs, but omit credentials, token hashes, internal notes, raw gateway fields, SMTP error codes and mail-routing/configuration values. The browser displays general connection/service errors; detailed setup commands remain in server documentation. Hiding an admin shortcut is not an authorization control: staff endpoints still require a valid admin session.
+
+Boarding QR payloads contain only a schema version, booking reference, boat ID, trip date/time, guest count and seat numbers. They omit passenger name/contact details, payment method/reference, and account/security metadata. The visible pass still shows its owner's normal booking/payment summary. QR data remains unsigned demo data, not a production travel credential.
+
+No frontend can conceal the code and ordinary requests it needs to run. Password/reset-token submissions and session cookies remain necessary for authentication; protect them with HTTPS and the existing server-side session/ownership controls. Secrets and deployment settings must stay on the server, never in Vite-prefixed variables or public bundles.

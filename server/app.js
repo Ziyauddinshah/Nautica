@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { initUsers,registerUser,loginUser,authenticateUser,changeUserPassword,userBookings,userBooking,requestPasswordReset,resetUserPassword } from './users.js';
+import { passView,bookingView,emailServiceView } from './views.js';
 import { notificationsFor } from './email.js';
 import { ApiError, availability, createBooking, login, authenticate, adminBookings, digest } from './store.js';
 
@@ -29,13 +30,13 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         };
         if(req.method==='GET'&&url.pathname==='/api/health')return send(200,{ok:true});
         if(req.method==='GET'&&url.pathname==='/api/availability')return send(200,{...availability(db,Object.fromEntries(url.searchParams)),mode});
-        if(req.method==='POST'&&url.pathname==='/api/bookings'){const user=authenticateUser(db,userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=createBooking(db,{...input,email:user.email},mode,user);emailService?.kick();return send(201,{booking});}
+        if(req.method==='POST'&&url.pathname==='/api/bookings'){const user=authenticateUser(db,userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=createBooking(db,{...input,email:user.email},mode,user);emailService?.kick();return send(201,{booking:passView(booking)});}
         if(req.method==='POST'&&url.pathname==='/api/user/forgot-password'){
           const input=await body();throttle(req,'forgot',typeof input?.email==='string'?input.email.trim().toLowerCase().slice(0,150):'');
           const settings=emailService?.status();
           const job=requestPasswordReset(db,input,{enabled:settings?.passwordResetEnabled,siteOrigin:settings?.siteOrigin});
           // Return the same response before SMTP completes, regardless of account existence.
-          send(200,{message:'If an account exists for that email and email delivery is configured, a reset link will arrive shortly. Check your spam folder too.'});
+          send(200,{message:'If this email is registered with us, you will receive a password reset link shortly. Check your inbox and spam folder.'});
           if(job)emailService.sendPasswordReset(job);
           return;
         }
@@ -70,7 +71,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         if(url.pathname.startsWith('/api/admin/')){
           const username=authenticate(db,token(req));
           if(req.method==='GET'&&url.pathname==='/api/admin/session')return send(200,{username});
-          if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=adminBookings(db,Object.fromEntries(url.searchParams));return send(200,{...data,bookings:data.bookings.map(record=>({...record,notifications:notificationsFor(db,record.id)})),emailService:emailService?.status()||{configured:false,reason:'Gmail SMTP is not configured.'}});}
+          if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=adminBookings(db,Object.fromEntries(url.searchParams));return send(200,{...data,bookings:data.bookings.map(record=>bookingView(record,{admin:true,notifications:notificationsFor(db,record.id)})),emailService:emailServiceView(emailService)});}
           const retryMatch=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/emails\/retry$/);
           if(req.method==='POST'&&retryMatch){if(!emailService?.status().configured)throw new ApiError(503,'Configure Gmail SMTP on the server before retrying email.');if(!db.prepare('SELECT id FROM bookings WHERE id=?').get(retryMatch[1]))throw new ApiError(404,'Booking not found.');emailService.retry(retryMatch[1]);return send(200,{ok:true});}
           if(req.method==='POST'&&url.pathname==='/api/admin/logout'){db.prepare('DELETE FROM sessions WHERE token_hash=?').run(digest(token(req)));return send(200,{ok:true},{'Set-Cookie':cookie('',0)});}
@@ -81,10 +82,10 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
       const base=resolve('dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
       if(path!==base&&!path.startsWith(base+sep))throw new ApiError(404,'Not found.');
       const filename=['/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
-      let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Run npm run build to serve the frontend.');}
+      let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Page not found.');}
       const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
       res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'same-origin','Cache-Control':extname(filename)==='.html'?'no-cache':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
-    } catch(error) { if(!res.headersSent)send(error instanceof ApiError?error.status:500,{error:error instanceof ApiError?error.message:'The server could not complete this request.',...(error instanceof ApiError?error.details:{})}); }
+    } catch(error) { if(!res.headersSent)send(error instanceof ApiError?error.status:500,{error:!(error instanceof ApiError)||error.status>=500?'Something went wrong. Please try again later.':error.status===403?'This request could not be completed. Refresh the page and try again.':error.message,...(error instanceof ApiError&&error.status===409&&Array.isArray(error.details.bookedSeats)?{bookedSeats:error.details.bookedSeats.filter(seat=>typeof seat==='string'&&/^\d{2}$/.test(seat))}:{})}); }
   });
   server.requestTimeout=15000;
   return server;

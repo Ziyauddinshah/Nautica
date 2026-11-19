@@ -1,6 +1,7 @@
 import { randomBytes,randomUUID,scryptSync,timingSafeEqual } from 'node:crypto';
 import { ApiError,digest } from './store.js';
 import { localDate } from '../src/domain/booking.js';
+import { bookingView } from './views.js';
 import { notificationsFor } from './email.js';
 
 export function initUsers(db){
@@ -69,7 +70,7 @@ export function userBookings(db,userId,query={}){
  return {bookings:rows.map(row=>ownRecord(db,JSON.parse(row.record))),total,upcoming,offset,limit:50};
 }
 function ownRecord(db,record){
- return {id:record.id,status:record.status,createdAt:record.createdAt,customer:{...record.customer},boat:record.boat,trip:record.trip,extras:record.extras,pricing:record.pricing,payment:record.payment,pass:record.pass,notifications:notificationsFor(db,record.id).filter(job=>job.audience==='customer')};
+ return bookingView(record,{notifications:notificationsFor(db,record.id)});
 }
 export function userBooking(db,userId,id){
  const row=db.prepare('SELECT record FROM bookings WHERE id=? AND user_id=?').get(id,userId);

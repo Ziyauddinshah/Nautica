@@ -31,7 +31,7 @@ test('guests must sign in before booking and the intended trip resumes after log
 test('account shows server booking/payment details and logout removes the private view',async()=>{
  vi.mocked(fetch).mockImplementation(async path=>path==='/api/user/logout'?json({ok:true}):json({bookings:[record],total:1}));
  const changed=vi.fn();const view=render(<CustomerAccount user={user} onUser={changed} currency="INR" onCurrency={()=>{}}/>);
- await screen.findByText('Ganges Dawn');expect(screen.getByText(/Seats 01/)).toBeTruthy();fireEvent.click(screen.getByRole('tab',{name:'Payment history'}));expect(screen.getByText('DEMO-OWN')).toBeTruthy();expect(screen.getByText('demo_paid')).toBeTruthy();
+ await screen.findByText('Ganges Dawn');expect(screen.getByText(/Seats 01/)).toBeTruthy();fireEvent.click(screen.getByRole('tab',{name:'Payment history'}));expect(screen.getByText('DEMO-OWN')).toBeTruthy();expect(screen.getByText('Demo payment recorded')).toBeTruthy();
  fireEvent.click(screen.getByRole('button',{name:'Sign out'}));await waitFor(()=>expect(changed).toHaveBeenCalledWith(null));view.rerender(<CustomerAccount user={null} onUser={changed} currency="INR" onCurrency={()=>{}}/>);expect(screen.queryByText('DEMO-OWN')).toBeNull();expect(screen.getByRole('button',{name:'Sign in',exact:true})).toBeTruthy();
 });
 test('password change requests reauthentication and clears history on success',async()=>{

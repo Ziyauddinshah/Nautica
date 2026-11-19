@@ -57,13 +57,13 @@ Copy `.env.example` to `.env` and set `SMTP_ENABLED=true`, `SMTP_USER` to the se
 2. Restart the app server to load the SMTP settings.
 3. Make a new booking with an email address you control. Expect a customer confirmation at that address and a separate admin confirmation at `SMTP_ADMIN_TO`.
 4. In `/admin`, refresh the booking and check each recipient's email status, attempt count and sent timestamp. Open the message and verify boat, date/time, seats, extras, total and the clear simulated-payment notice.
-5. To test failure safely, use invalid SMTP credentials on a local test instance. The booking must still confirm and reserve its seats. Status should become failed with a generic error code; the queue retries with backoff. Fix credentials, restart, and use **Retry failed emails** in admin details if needed.
+5. To test failure safely, use invalid SMTP credentials on a local test instance. The booking must still confirm and reserve its seats. Status should become failed; the queue retries with backoff. Fix credentials, restart, and use **Retry failed emails** in admin details if needed.
 
 The queue is part of the same database transaction as the reservation. Repeating an idempotent booking request does not create new email jobs. Two roles are tracked separately even if the admin and customer email happen to be the same address. Customer messages omit admin-only contact summaries and admin links. Full card numbers, CVVs and UPI IDs are never included.
 
 Pending email jobs created after this feature was installed are processed when SMTP becomes configured, including after a restart. Older bookings without queue records show **Not queued (older booking)**. Sent messages cannot be resent with the failed-email retry button. Automatic delivery is at-least-once after process recovery; an SMTP-accepted message may be duplicated if the process stops before recording the success. A stable Message-ID is reused, but recipient providers control deduplication. The single-process worker does not provide bounce webhooks or inbox-delivery tracking.
 
-SMTP error details are reduced to safe codes in the admin panel; secrets and raw provider responses are not logged. Successful `SMTP accepted` status does not guarantee inbox placement. Check spam folders and account sending limits. App Passwords usually require Google 2-Step Verification and may be restricted by your account's administrator. No actual Gmail email was sent during automated tests: SMTP integration tests bind a local test server and use test-only recipients.
+SMTP diagnostic codes remain in the private server database; they are not sent to the customer or admin browser. Secrets and raw provider responses are not logged. Successful `Sent` status does not guarantee inbox placement. Check spam folders and account sending limits. App Passwords usually require Google 2-Step Verification and may be restricted by your account's administrator. No actual Gmail email was sent during automated tests: SMTP integration tests bind a local test server and use test-only recipients.
 
 
 ## Customer-account acceptance checks
@@ -89,3 +89,10 @@ Sessions are eight hours with HttpOnly, SameSite=Strict cookies; use HTTPS with 
 5. Test an expired or modified token: the app must show an invalid/expired message and offer a fresh request. No password or session changes should occur. Changing a password through Account security must invalidate older reset links as well.
 
 Reset delivery uses the same Gmail SMTP transport but does not persist email bodies containing bearer tokens. Token hashes and expiry/used state persist in SQLite. If delivery fails or the server stops before sending, request another link; the password is unchanged until a reset succeeds. Request limits apply even to nonexistent addresses. The raw token never appears in server responses or stored booking metadata. Do not log request bodies or share/reset links. For local development, origin/port must match the app you want the email to open. Production reset links require HTTPS. Live Gmail delivery still needs your configured account credentials and has not been verified with a real Gmail account in automated tests.
+
+
+## Readability and client-information checks
+
+Use a desktop and a 320px-wide mobile viewport, then increase browser zoom/text size. Review the larger labels, input values, prices, seat numbers, account tables and wrapping pass exports. The mobile fleet should use a single column; tables may scroll horizontally rather than shrinking their text. Graphical browser checks were unavailable in the implementation workspace.
+
+Customer/admin responses are now explicit projections. Check authenticated account and admin requests in developer tools: authorized profile/booking/payment summaries must remain usable, while hashes, raw gateway fields, SMTP configuration/routing and diagnostic codes must be absent. QR data should contain only booking/trip/seat identity. No setup commands, `.env` values or SMTP credentials should appear in UI messages. Operational settings remain in the server environment and documentation, and unexpected service failures use general messages.
