@@ -33,7 +33,23 @@ No customer passwords, session tokens, booking history or payment records are pe
 
 Existing **guest/unowned bookings are not automatically assigned by matching email**, because registration does not prove ownership of past guest reservations. They remain available to authorized admins. Old browser-only pass copies are ignored by the account UI and are not imported into history; they are left untouched to avoid deleting user files. The signed-in Account security page provides an explicit option to clear old browser pass copies on a shared device.
 
-Email verification, forgotten-password recovery, MFA, account deletion and contact/profile editing are not implemented. Use HTTPS when deploying and keep database files/backups private; SQLite contact data is not encrypted at rest. This is a tested application implementation, not a claim that every deployment is secure by default.
+Forgotten-password recovery is available through a single-use email link as described below. Email verification at registration, MFA, account deletion and contact/profile editing are not implemented. Use HTTPS when deploying and keep database files/backups private; SQLite contact data is not encrypted at rest. This is a tested application implementation, not a claim that every deployment is secure by default.
+
+## Forgot password — no current password required
+
+Choose **Forgot password?** on the customer sign-in form and enter the registered email address. If the account exists and Gmail SMTP/password-reset delivery is configured, an email provides a single-use reset link valid for **15 minutes**. The user sets a new 12+ character password and then signs in again. Successful reset revokes every existing session and every outstanding reset link. Changing a password from Account security also invalidates older reset links.
+
+Reset links require both working Gmail SMTP and a trusted `PUBLIC_ORIGIN` in `.env`:
+
+```dotenv
+PUBLIC_ORIGIN=http://localhost:3000
+```
+
+For deployment use the actual **HTTPS origin**, e.g. `PUBLIC_ORIGIN=https://nautica.example.com`, and restart the server. The origin must not contain credentials, paths, query strings or fragments. HTTP is accepted only for local development. The app never constructs reset links from an untrusted Host header or a redirect supplied by a requester. The admin panel reports when reset delivery is disabled because origin configuration is missing.
+
+Reset tokens are random 256-bit values stored only as hashes in SQLite. The email link carries the token in a URL fragment, which is not sent in the page request; the frontend removes it from the address bar before React mounts and keeps it only in memory for submission. Reloading the cleaned page requires reopening the email link or requesting another one. Tokens are not placed in browser storage, API responses, application logs, booking QR codes or admin records.
+
+The request form returns the same response for registered and unregistered emails, without waiting for SMTP. Reset requests are throttled (five per observed IP and three per email per 15 minutes); reset submissions are also throttled. Password-reset emails are sent immediately rather than stored with plaintext bearer tokens in the booking email queue. If SMTP fails or the process restarts before delivery, request a new link. No password changes until a valid link is submitted with a new password. There is no default recovery code or fallback that bypasses access to the registered inbox. Admin password recovery continues to use the server-side `admin:create` command.
 
 ## Seat blocking
 

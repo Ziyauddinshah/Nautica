@@ -5,7 +5,8 @@ import { notificationsFor } from './email.js';
 
 export function initUsers(db){
  db.exec(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE COLLATE NOCASE,name TEXT NOT NULL,phone TEXT NOT NULL,salt TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS user_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);`);
+ CREATE TABLE IF NOT EXISTS user_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);`);
  const columns=db.prepare('PRAGMA table_info(bookings)').all();
  if(!columns.some(column=>column.name==='user_id'))db.exec('ALTER TABLE bookings ADD COLUMN user_id TEXT REFERENCES users(id)');
  db.exec('CREATE INDEX IF NOT EXISTS bookings_owner ON bookings(user_id,created_at)');
@@ -58,7 +59,7 @@ export function changeUserPassword(db,userId,input){
  if(!passwordMatches(row,input.currentPassword))throw new ApiError(401,'Current password is incorrect.');
  if(input.currentPassword===input.newPassword)throw new ApiError(400,'Choose a different new password.');
  const salt=randomBytes(16).toString('hex'),hash=scryptSync(input.newPassword,salt,64,{N:32768,r:8,p:3,maxmem:64*1024*1024}).toString('hex');
- db.exec('BEGIN IMMEDIATE');try{db.prepare('UPDATE users SET salt=?,hash=? WHERE id=?').run(salt,hash,userId);db.prepare('DELETE FROM user_sessions WHERE user_id=?').run(userId);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+ db.exec('BEGIN IMMEDIATE');try{db.prepare('UPDATE users SET salt=?,hash=? WHERE id=?').run(salt,hash,userId);db.prepare('DELETE FROM user_sessions WHERE user_id=?').run(userId);db.prepare('UPDATE password_resets SET used=1 WHERE user_id=?').run(userId);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
 }
 export function userBookings(db,userId,query={}){
  const offset=Math.max(0,Math.min(1000000,parseInt(query.offset)||0));
@@ -74,4 +75,35 @@ export function userBooking(db,userId,id){
  const row=db.prepare('SELECT record FROM bookings WHERE id=? AND user_id=?').get(id,userId);
  if(!row)throw new ApiError(404,'Booking not found.');
  return ownRecord(db,JSON.parse(row.record));
+}
+
+export function requestPasswordReset(db,input,{enabled=false,siteOrigin='',now=Date.now()}={}){
+ const email=typeof input?.email==='string'?input.email.trim().toLowerCase():'';
+ if(email.length>150||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))throw new ApiError(400,'Enter a valid email address.');
+ if(!enabled||!siteOrigin)return null;
+ const user=db.prepare('SELECT id,email,name FROM users WHERE email=?').get(email);
+ if(!user)return null;
+ const token=randomBytes(32).toString('hex'),expires=now+15*60*1000;
+ db.prepare('DELETE FROM password_resets WHERE expires<=? OR used=1').run(now);
+ db.prepare('INSERT INTO password_resets(token_hash,user_id,expires) VALUES(?,?,?)').run(digest(token),user.id,expires);
+ const url=new URL('/reset-password',siteOrigin);url.hash='token='+token;
+ return {user,token,link:url.href,expires};
+}
+export function resetUserPassword(db,input,now=Date.now()){
+ const invalid=()=>new ApiError(400,'This reset link is invalid or expired. Request a new one.');
+ if(!input||typeof input.token!=='string'||!/^[a-f0-9]{64}$/.test(input.token))throw invalid();
+ if(!passwordValid(input.newPassword))throw new ApiError(400,'Choose a password between 12 and 256 characters.');
+ const tokenHash=digest(input.token);
+ const reset=db.prepare('SELECT user_id FROM password_resets WHERE token_hash=? AND used=0 AND expires>?').get(tokenHash,now);
+ if(!reset)throw invalid();
+ const salt=randomBytes(16).toString('hex'),hash=scryptSync(input.newPassword,salt,64,{N:32768,r:8,p:3,maxmem:64*1024*1024}).toString('hex');
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  const fresh=db.prepare('SELECT user_id FROM password_resets WHERE token_hash=? AND used=0 AND expires>?').get(tokenHash,Math.max(now,Date.now()));
+  if(!fresh)throw invalid();
+  db.prepare('UPDATE users SET salt=?,hash=? WHERE id=?').run(salt,hash,fresh.user_id);
+  db.prepare('UPDATE password_resets SET used=1 WHERE user_id=?').run(fresh.user_id);
+  db.prepare('DELETE FROM user_sessions WHERE user_id=?').run(fresh.user_id);
+  db.exec('COMMIT');
+ }catch(error){db.exec('ROLLBACK');throw error;}
 }

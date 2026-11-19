@@ -5,6 +5,7 @@ import BoatArt from './components/BoatArt.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import useCustomerSession from './hooks/useCustomerSession.js';
 import AuthDialog from './components/AuthForm.jsx';
+import ResetPassword from './components/ResetPassword.jsx';
 import CustomerAccount from './components/CustomerAccount.jsx';
 import { request } from './lib/api.js';
 import BookingDialog from './components/BookingDialog.jsx';
@@ -12,7 +13,7 @@ import BookingDialog from './components/BookingDialog.jsx';
 const tomorrow = () => { const date = new Date(); date.setDate(date.getDate() + 1); return N.localDate(date); };
 function Brand() { return <a className="brand" href="./" aria-label="Nautica home"><span className="brand-icon" aria-hidden="true">⚓</span>Nautica<span className="brand-dot">.</span></a>; }
 
-export default function App() {
+export default function App({resetToken=null}) {
   const [currency, setCurrency] = useState(loadCurrency);
   const [history,setHistory]=useState({owner:null,items:[]});
   const {user,setUser}=useCustomerSession();
@@ -66,6 +67,7 @@ export default function App() {
     openFlow(next,event.currentTarget);
   }
   if(window.location.pathname.replace(/\/$/,'')==='/admin')return <AdminDashboard/>;
+  if(window.location.pathname.replace(/\/$/,'')==='/reset-password')return <ResetPassword token={resetToken} onUser={setUser}/>;
   if(window.location.pathname.replace(/\/$/,'')==='/account')return <CustomerAccount key={user?.id||'guest'} user={user} onUser={setUser} currency={currency} onCurrency={toggleCurrency}/>;
   return <>
     <header className="header"><Brand/><span className="header-note">LESS ORDINARY. MORE OPEN WATER.</span><nav aria-label="Main navigation">{user?<a className="quiet account-link" href="/account">My account</a>:<button className="quiet" disabled={user===undefined} onClick={event=>beginAuth(null,event.currentTarget)}>Sign in / Register</button>}<a className="quiet admin-link" href="/admin">Admin</a><button className="quiet" onClick={toggleCurrency} aria-label={`Currency ${currency}. Switch to ${currency === 'INR' ? 'USD' : 'INR'}`}>{currency === 'INR' ? '₹ INR' : '$ USD'} ⇄</button><button className="outline" disabled={user===undefined} onClick={event => user?openFlow({kind:'passes'},event.currentTarget):beginAuth({kind:'passes'},event.currentTarget)}>My passes <span className="count">{passes.filter(pass => pass.date >= N.localDate()).length}</span></button></nav></header>

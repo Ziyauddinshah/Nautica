@@ -13,7 +13,18 @@ export function emailConfig(env = process.env) {
   const host=(env.SMTP_HOST||'smtp.gmail.com').trim(),port=Number(env.SMTP_PORT||465);
   const pass=(env.SMTP_PASS||'').replace(/\s/g,'');
   if(!address(user)||!address(adminTo)||!pass||!['smtp.gmail.com'].includes(host)||![465,587].includes(port))return {enabled:true,configured:false,reason:'Gmail SMTP configuration is incomplete or invalid. Check the server .env file.'};
-  return {enabled:true,configured:true,reason:'Gmail SMTP is configured.',user,adminTo,host,port,pass,adminUrl:env.PUBLIC_ORIGIN?adminLink(env.PUBLIC_ORIGIN):null};
+  return {enabled:true,configured:true,reason:'Gmail SMTP is configured.',user,adminTo,host,port,pass,adminUrl:env.PUBLIC_ORIGIN?adminLink(env.PUBLIC_ORIGIN):null,siteOrigin:trustedResetOrigin(env.PUBLIC_ORIGIN,env.NODE_ENV==='production')};
+}
+export function trustedResetOrigin(value,production=false){
+ try{const url=new URL(value);if(url.username||url.password||url.pathname!=='/'||url.search||url.hash)return null;
+ if(url.protocol==='https:')return url.origin;
+ if(!production&&url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname))return url.origin;
+ }catch{}return null;
+}
+export function passwordResetMessage(user,link,config){
+ const text=`Hello ${user.name},\n\nUse this link to reset your Nautica password:\n${link}\n\nThis link expires in 15 minutes and can be used once. Resetting your password signs out all devices. If you did not request this, ignore this message; your password has not changed. Never share this link.`;
+ return {from:{name:'Nautica',address:config.user},to:{address:user.email},subject:'Reset your Nautica password',text,
+ html:`<!doctype html><html lang="en"><body style="font-family:Arial,sans-serif;color:#0a192f;padding:24px"><h1 style="font-size:24px">Reset your Nautica password</h1><p>Hello ${escape(user.name)},</p><p><a href="${escape(link)}">Choose a new password</a></p><p>This single-use link expires in 15 minutes. Resetting your password signs out all devices.</p><p>If you did not request this, ignore this email; your password has not changed. Never share this link.</p></body></html>`,disableFileAccess:true,disableUrlAccess:true};
 }
 function adminLink(origin){try{const url=new URL('/admin',origin);return ['https:','http:'].includes(url.protocol)?url.href:null;}catch{return null;}}
 export function smtpOptions(config) {
@@ -51,7 +62,8 @@ function safeError(error){
 export function createEmailService(db,{config=emailConfig(),transport,now=()=>Date.now()}={}){
   const mailer=config.configured?(transport||nodemailer.createTransport(smtpOptions(config))):null;
   let timer,busy=false,stopped=false,running=Promise.resolve();
-  function status(){return {enabled:config.enabled,configured:config.configured,reason:config.reason,sender:config.configured?config.user:null,adminRecipient:config.configured?config.adminTo:null};}
+  const resetSends=new Set();
+  function status(){return {passwordResetEnabled:!!(config.configured&&config.siteOrigin),siteOrigin:config.siteOrigin||null,enabled:config.enabled,configured:config.configured,reason:config.reason,sender:config.configured?config.user:null,adminRecipient:config.configured?config.adminTo:null};}
   function claim(){
     db.exec('BEGIN IMMEDIATE');
     try{
@@ -95,5 +107,14 @@ export function createEmailService(db,{config=emailConfig(),transport,now=()=>Da
     db.prepare("UPDATE email_outbox SET status='pending',attempts=0,next_attempt_at=0,lease_until=0,last_error_code=NULL WHERE booking_id=? AND status='failed'").run(bookingId);
     kick();
   }
-  return {status,kick,drain,retry,start(){stopped=false;kick();timer=setInterval(kick,15000);timer.unref?.();},async stop(){stopped=true;clearInterval(timer);await running;mailer?.close?.();}};
+  function sendPasswordReset(job){
+    if(!mailer||!config.siteOrigin||stopped)return Promise.resolve(false);
+    // No token or message body is persisted or logged. Reset requests may be repeated after a process restart.
+    const pending=Promise.resolve().then(()=>mailer.sendMail(passwordResetMessage(job.user,job.link,config))).then(result=>{
+      if(!result.accepted?.some(value=>(typeof value==='string'?value:value.address)?.toLowerCase()===job.user.email.toLowerCase()))throw new Error('Recipient not accepted.');
+      return true;
+    }).catch(()=>{console.error('Password reset email could not be sent. Check Gmail SMTP settings.');return false;}).finally(()=>resetSends.delete(pending));
+    resetSends.add(pending);return pending;
+  }
+  return {status,kick,drain,retry,sendPasswordReset,start(){stopped=false;kick();timer=setInterval(kick,15000);timer.unref?.();},async stop(){stopped=true;clearInterval(timer);await running;await Promise.allSettled([...resetSends]);mailer?.close?.();}};
 }

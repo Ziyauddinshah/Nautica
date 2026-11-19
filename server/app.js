@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
-import { initUsers,registerUser,loginUser,authenticateUser,changeUserPassword,userBookings,userBooking } from './users.js';
+import { initUsers,registerUser,loginUser,authenticateUser,changeUserPassword,userBookings,userBooking,requestPasswordReset,resetUserPassword } from './users.js';
 import { notificationsFor } from './email.js';
 import { ApiError, availability, createBooking, login, authenticate, adminBookings, digest } from './store.js';
 
@@ -10,7 +10,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
   const attempts = new Map(),userAttempts=new Map();
   function userToken(req){return (req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith('nautica_user='))?.slice(13);}
   function userCookie(value,maxAge=28800){return `nautica_user=${value}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${maxAge}${production?'; Secure':''}`;}
-  function throttle(req,category,identifier=''){const now=Date.now();for(const [key,value]of userAttempts)if(value.until<=now)userAttempts.delete(key);if(userAttempts.size>10000)throw new ApiError(429,'Please try again later.');const keys=[category+':ip:'+req.socket.remoteAddress,...(identifier?[category+':account:'+digest(identifier)]:[])];for(const key of keys){const value=userAttempts.get(key)||{count:0,until:now+900000};if(value.count>= (category==='register'?10:15))throw new ApiError(429,'Too many attempts. Try again after 15 minutes.');value.count++;userAttempts.set(key,value);}}
+  function throttle(req,category,identifier=''){const now=Date.now();for(const [key,value]of userAttempts)if(value.until<=now)userAttempts.delete(key);if(userAttempts.size>10000)throw new ApiError(429,'Please try again later.');const keys=[category+':ip:'+req.socket.remoteAddress,...(identifier?[category+':account:'+digest(identifier)]:[])];for(const key of keys){const value=userAttempts.get(key)||{count:0,until:now+900000};if(value.count>= (category==='forgot'?(key.includes(':account:')?3:5):category==='register'?10:15))throw new ApiError(429,'Too many attempts. Try again after 15 minutes.');value.count++;userAttempts.set(key,value);}}
   function token(req) { return (req.headers.cookie || '').split(';').map(v=>v.trim()).find(v=>v.startsWith('nautica_admin='))?.slice(14); }
   function cookie(value, maxAge=28800) {return `nautica_admin=${value}; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=${maxAge}${production?'; Secure':''}`;}
   const server = http.createServer(async (req,res) => {
@@ -30,6 +30,19 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         if(req.method==='GET'&&url.pathname==='/api/health')return send(200,{ok:true});
         if(req.method==='GET'&&url.pathname==='/api/availability')return send(200,{...availability(db,Object.fromEntries(url.searchParams)),mode});
         if(req.method==='POST'&&url.pathname==='/api/bookings'){const user=authenticateUser(db,userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=createBooking(db,{...input,email:user.email},mode,user);emailService?.kick();return send(201,{booking});}
+        if(req.method==='POST'&&url.pathname==='/api/user/forgot-password'){
+          const input=await body();throttle(req,'forgot',typeof input?.email==='string'?input.email.trim().toLowerCase().slice(0,150):'');
+          const settings=emailService?.status();
+          const job=requestPasswordReset(db,input,{enabled:settings?.passwordResetEnabled,siteOrigin:settings?.siteOrigin});
+          // Return the same response before SMTP completes, regardless of account existence.
+          send(200,{message:'If an account exists for that email and email delivery is configured, a reset link will arrive shortly. Check your spam folder too.'});
+          if(job)emailService.sendPasswordReset(job);
+          return;
+        }
+        if(req.method==='POST'&&url.pathname==='/api/user/reset-password'){
+          throttle(req,'password-reset');resetUserPassword(db,await body());
+          return send(200,{ok:true,message:'Password updated. Sign in with your new password.'},{'Set-Cookie':userCookie('',0)});
+        }
         if(req.method==='POST'&&['/api/user/register','/api/user/login'].includes(url.pathname)){
           const input=await body(),register=url.pathname.endsWith('/register');
           throttle(req,register?'register':'login',typeof input?.email==='string'?input.email.trim().toLowerCase().slice(0,150):'');
@@ -67,7 +80,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
       if(!['GET','HEAD'].includes(req.method))throw new ApiError(405,'Method not allowed.');
       const base=resolve('dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
       if(path!==base&&!path.startsWith(base+sep))throw new ApiError(404,'Not found.');
-      const filename=['/','/admin','/admin/','/account','/account/'].includes(url.pathname)?resolve(base,'index.html'):path;
+      const filename=['/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
       let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Run npm run build to serve the frontend.');}
       const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
       res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'same-origin','Cache-Control':extname(filename)==='.html'?'no-cache':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
