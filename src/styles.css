@@ -514,3 +514,5 @@ button,.quiet,.outline,.primary,.chip,.tab,.bank,.back-link{min-height:44px}
 .header nav{width:100%;justify-content:flex-start}
 .account-booking .section-head{align-items:flex-start}
 }
+
+:lang(hi){font-family:"Noto Sans Devanagari",sans-serif;line-height:1.7}.language-switch select{font:inherit;min-height:44px;padding:6px 10px;border:1px solid #b9c5cf;border-radius:8px;background:white;color:#10283c}.language-switch{display:inline-flex;margin:8px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}

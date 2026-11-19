@@ -17,6 +17,7 @@ test('registration sends account fields, checks password confirmation, and does 
 });
 test('guests must sign in before booking and the intended trip resumes after login',async()=>{
  let signed=false;vi.mocked(fetch).mockImplementation(async(path)=>{
+  if(path==='/api/payments/config')return json({mode:'demo',enabled:true});
   if(path==='/api/user/session')return signed?json({user}):json({error:'Sign in'},401);
   if(path==='/api/user/login'){signed=true;return json({user});}
   if(path==='/api/user/bookings')return json({bookings:[],total:0});

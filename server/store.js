@@ -8,6 +8,7 @@ export class ApiError extends Error { constructor(status, message, details = {})
 export const digest = value => createHash('sha256').update(value).digest('hex');
 const bankNames = ['SBI','HDFC Bank','ICICI Bank','Axis Bank','Bank of Baroda','Canara Bank','Kotak Mahindra','Punjab National Bank','Union Bank'];
 export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nautica.sqlite')) {
+  if(filename!==':memory:'&&(resolve(filename)===resolve('dist')||resolve(filename).startsWith(resolve('dist')+'/')))throw new Error('Database must be outside dist.');
   if (filename !== ':memory:') mkdirSync(dirname(filename), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(filename);
   if (filename !== ':memory:') chmodSync(filename, 0o600);
@@ -21,6 +22,8 @@ export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nau
     CREATE INDEX IF NOT EXISTS email_due ON email_outbox(status,next_attempt_at);
     CREATE INDEX IF NOT EXISTS trip_bookings ON bookings(boat_id,date,slot);`);
   if(!db.prepare('PRAGMA table_info(bookings)').all().some(column=>column.name==='user_id'))db.exec('ALTER TABLE bookings ADD COLUMN user_id TEXT REFERENCES users(id)');
+  db.exec(`CREATE TABLE IF NOT EXISTS payment_attempts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),request_key TEXT UNIQUE NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,amount INTEGER NOT NULL,order_id TEXT UNIQUE,payment_id TEXT UNIQUE,status TEXT NOT NULL,expires INTEGER NOT NULL,booking_id TEXT REFERENCES bookings(id));
+    CREATE TABLE IF NOT EXISTS seat_holds(boat_id TEXT,date TEXT,slot TEXT,seat TEXT,attempt_id TEXT REFERENCES payment_attempts(id),expires INTEGER NOT NULL,PRIMARY KEY(boat_id,date,slot,seat));`);
   return db;
 }
 export function tripInfo(input) {
@@ -31,9 +34,9 @@ export function tripInfo(input) {
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0,10) !== input.date) throw new ApiError(400, 'Invalid calendar date.');
   return boat;
 }
-export function availability(db, input) {
+export function availability(db, input, excludeAttempt='') {
   const boat = tripInfo(input);
-  const rows = db.prepare('SELECT seat FROM seats WHERE boat_id=? AND date=? AND slot=? ORDER BY seat').all(boat.id, input.date, input.slot);
+  const rows = db.prepare(`SELECT seat FROM seats WHERE boat_id=? AND date=? AND slot=? UNION SELECT seat FROM seat_holds WHERE boat_id=? AND date=? AND slot=? AND expires>? AND attempt_id<>? ORDER BY seat`).all(boat.id,input.date,input.slot,boat.id,input.date,input.slot,Date.now(),excludeAttempt||'');
   return { boatId: boat.id, date: input.date, slot: input.slot, bookedSeats: rows.map(row => row.seat), remaining: boat.capacity - rows.length };
 }
 function paymentSummary(payment) {
@@ -43,7 +46,7 @@ function paymentSummary(payment) {
   if (payment.type === 'card' && ['VISA','MASTERCARD','RUPAY','AMEX','CARD'].includes(payment.network) && /^\d{4}$/.test(payment.last4)) return { type: 'card', network: payment.network, last4: payment.last4, method: `${payment.network} · ${payment.last4}` };
   throw new ApiError(400, 'Choose a supported payment method.');
 }
-export function createBooking(db, input, mode = 'seats', owner = null) {
+export function validateBooking(input, owner = null) {
   const boat = tripInfo(input);
   if (input.date < N.localDate()) throw new ApiError(400, 'Choose today or a future date.');
   if (!N.validSeats(boat, input.seats, input.guests)) throw new ApiError(400, 'Choose one valid, distinct seat for every guest.');
@@ -58,6 +61,10 @@ export function createBooking(db, input, mode = 'seats', owner = null) {
   const payment = paymentSummary(input.payment);
   const canonical = { boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, email, phone, extras, payment, ownerId:owner?.id||null };
   const hash = digest(JSON.stringify(canonical));
+  return {boat,name,email,phone,extras,seats,payment,hash};
+}
+export function createBooking(db,input,mode='seats',owner=null,receipt=null) {
+  const {boat,name,email,phone,extras,seats,payment,hash}=validateBooking(input,owner);
   db.exec('BEGIN IMMEDIATE');
   try {
     const existing = db.prepare('SELECT record, request_hash, user_id FROM bookings WHERE request_key=?').get(input.requestKey);
@@ -65,20 +72,21 @@ export function createBooking(db, input, mode = 'seats', owner = null) {
       if (existing.user_id !== (owner?.id||null) || existing.request_hash !== hash) throw new ApiError(409, 'This booking request was already used with different details.');
       db.exec('COMMIT');return JSON.parse(existing.record).pass;
     }
-    const booked = availability(db, input).bookedSeats;
+    const booked = availability(db, input,receipt?.attemptId).bookedSeats;
     const conflicts = (mode === 'private' && booked.length) ? seats : seats.filter(seat => booked.includes(seat));
     if (conflicts.length) throw new ApiError(409, 'Some seats were just booked. Choose different seats before trying again.', { bookedSeats: booked });
     const id = `NTC-${randomUUID().replaceAll('-','').slice(0,12).toUpperCase()}`;
     const createdAt = new Date().toISOString();
     const pricing = N.amounts(boat, extras);
-    const paymentInfo = { ...payment, status: 'demo_paid', reference: `DEMO-${randomUUID()}`, paidAt: createdAt, amount: pricing.total, currency: 'INR' };
-    const pass = { id, boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, extras, total: pricing.total, currencyBase: 'INR', method: payment.method, paymentStatus: 'demo_paid', paymentReference: paymentInfo.reference, createdAt, serverConfirmed: true, emailStatus: 'requested' };
-    const record = { id, status: 'confirmed', createdAt, bookingMode: mode, customer: { name, email, phone }, boat: { ...boat }, trip: { date: input.date, slot: input.slot, guests: input.guests, seats }, extras, pricing, payment: paymentInfo, pass };
+    const paymentInfo = { ...payment, ...(receipt?{type:'razorpay',provider:'Razorpay',method:'Razorpay'}:{}), status: receipt?'paid':'demo_paid', reference: receipt?.paymentId||`DEMO-${randomUUID()}`, paidAt: createdAt, amount: pricing.total, currency: 'INR' };
+    const pass = { id, boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, extras, total: pricing.total, currencyBase: 'INR', method: paymentInfo.method, paymentStatus: paymentInfo.status, paymentReference: paymentInfo.reference, createdAt, serverConfirmed: true, emailStatus: 'requested' };
+    const record = { language:input.language==='hi'?'hi':'en', id, status: 'confirmed', createdAt, bookingMode: mode, customer: { name, email, phone }, boat: { ...boat }, trip: { date: input.date, slot: input.slot, guests: input.guests, seats }, extras, pricing, payment: paymentInfo, pass };
     db.prepare('INSERT INTO bookings(id,request_key,request_hash,boat_id,date,slot,created_at,record,user_id) VALUES(?,?,?,?,?,?,?,?,?)').run(id, input.requestKey, hash, boat.id, input.date, input.slot, createdAt, JSON.stringify(record), owner?.id||null);
     const reserve = db.prepare('INSERT INTO seats VALUES(?,?,?,?,?)');
     for (const seat of (mode === 'private' ? N.seatLayout(boat).map(seat => seat.id) : seats)) reserve.run(boat.id,input.date,input.slot,seat,id);
     const queue=db.prepare('INSERT INTO email_outbox(booking_id,audience,recipient) VALUES(?,?,?)');
     queue.run(id,'customer',email);queue.run(id,'admin',null);
+    if(receipt){db.prepare("UPDATE payment_attempts SET status='paid',booking_id=?,payment_id=? WHERE id=?").run(id,receipt.paymentId,receipt.attemptId);db.prepare('DELETE FROM seat_holds WHERE attempt_id=?').run(receipt.attemptId);}
     db.exec('COMMIT');return pass;
   } catch (error) { db.exec('ROLLBACK');throw error; }
 }

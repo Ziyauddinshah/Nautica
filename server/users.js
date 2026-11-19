@@ -67,7 +67,8 @@ export function userBookings(db,userId,query={}){
  const total=db.prepare('SELECT count(*) AS n FROM bookings WHERE user_id=?').get(userId).n;
  const upcoming=db.prepare("SELECT count(*) AS n FROM bookings WHERE user_id=? AND date>=?").get(userId,localDate()).n;
  const rows=db.prepare('SELECT record FROM bookings WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET ?').all(userId,offset);
- return {bookings:rows.map(row=>ownRecord(db,JSON.parse(row.record))),total,upcoming,offset,limit:50};
+ const payments=db.prepare("SELECT id,amount,'INR' AS currency,CASE WHEN status='refund_required' THEN 'refund_required' ELSE 'pending' END AS status,payment_id AS reference FROM payment_attempts WHERE user_id=? AND status<>'paid' AND (expires>? OR status='refund_required') ORDER BY expires DESC LIMIT 50").all(userId,Date.now());
+ return {bookings:rows.map(row=>ownRecord(db,JSON.parse(row.record))),payments,total,upcoming,offset,limit:50};
 }
 function ownRecord(db,record){
  return bookingView(record,{notifications:notificationsFor(db,record.id)});

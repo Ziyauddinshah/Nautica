@@ -1,11 +1,15 @@
 import { openStore } from './store.js';
 import { createEmailService } from './email.js';
 import { createApp } from './app.js';
+import {productionConfig} from './config.js';
+import {createPayments} from './payments.js';
+const config=productionConfig();
 const db=openStore();
 const mode=process.env.NAUTICA_BOOKING_MODE||'seats';
 if(!['seats','private'].includes(mode))throw new Error('NAUTICA_BOOKING_MODE must be seats or private.');
 const port=Number(process.env.PORT||3001),host=process.env.HOST||'127.0.0.1';
 const emailService=createEmailService(db);
-const server=createApp(db,{mode,emailService,production:process.env.NODE_ENV==='production',publicOrigin:process.env.PUBLIC_ORIGIN||''});
+const payments=createPayments(db,{mode,keyId:process.env.RAZORPAY_KEY_ID,keySecret:process.env.RAZORPAY_KEY_SECRET,webhookSecret:process.env.RAZORPAY_WEBHOOK_SECRET});
+const server=createApp(db,{mode,emailService,...config,payments,trustedProxyIPs:(process.env.TRUSTED_PROXY_IPS||'').split(',').map(value=>value.trim()).filter(Boolean)});
 server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);emailService.start();});
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await emailService.stop();db.close();process.exit(0);}));

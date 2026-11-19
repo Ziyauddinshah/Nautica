@@ -103,7 +103,7 @@ Email sending is disabled by default. New bookings still queue notifications whi
 
 The worker retries failed messages up to five times with backoff, keeps separate customer/admin status, and resumes pending work after restart. The admin booking details display statuses and a **Retry failed emails** button once SMTP is configured. That button does not resend already-sent messages. `Sent` means the SMTP server accepted the message, not proof of inbox delivery; spam filtering, bounces and Gmail quotas may still apply. A process crash after SMTP accepts a message but before SQLite records it can cause a duplicate on recovery; stable Message-IDs help deduplication but do not guarantee exactly-once delivery.
 
-The app sends text and HTML email without attachments. Pass download/PDF sharing remains available in the customer UI. All emails clearly state that payment is simulated and the ticket is a demo.
+The app sends text and HTML email without attachments. Pass download/PDF sharing remains available in the customer UI. Demo-payment emails clearly identify the simulation; Razorpay-paid confirmations show the captured payment status.
 
 ## Commands
 
@@ -122,7 +122,7 @@ Optional settings are documented in [.env.example](.env.example). Configure `PUB
 
 ## Scope and validation
 
-Payments remain **simulated**. The `demo_paid` status and `DEMO-` references are not bank/provider confirmations, no money is charged, and tickets are not valid for real travel. Integrate a real provider with verified callbacks before accepting payments. Seat diagrams remain illustrative and require confirmation against actual vessel plans. Contact verification, cancellation/refund flows and multi-instance database hosting are not implemented.
+Local demo mode uses `demo_paid` and `DEMO-` references, charges no money and issues demonstration tickets. Razorpay mode verifies captured payments; see COMMERCIAL_LAUNCH.md before accepting live bookings. Seat diagrams remain illustrative and require confirmation against actual vessel plans. Contact verification, cancellation/refund flows and multi-instance database hosting are not implemented.
 
 Tests cover seat blocking, conflicts, retries, persistence, server-calculated totals, protected admin access, login/logout, session cookies, login throttling, origin checks, customer validation, React seat states, checkout and admin views. Email tests cover separate recipients, HTML escaping, disabled configuration, retries, retry exhaustion, restart recovery and a real Nodemailer exchange against a local-only test SMTP server. Live Gmail authentication/delivery requires your own configuration and has not been verified in this workspace. Graphical browser, print dialogs and device sharing still require manual acceptance checks.
 
@@ -137,6 +137,19 @@ Vite development file access explicitly denies environment files, database/WAL/S
 
 Customer and admin JSON views use explicit field allowlists instead of serializing database/service objects. They retain the authorized booking/contact/payment summaries each role needs, but omit credentials, token hashes, internal notes, raw gateway fields, SMTP error codes and mail-routing/configuration values. The browser displays general connection/service errors; detailed setup commands remain in server documentation. Hiding an admin shortcut is not an authorization control: staff endpoints still require a valid admin session.
 
-Boarding QR payloads contain only a schema version, booking reference, boat ID, trip date/time, guest count and seat numbers. They omit passenger name/contact details, payment method/reference, and account/security metadata. The visible pass still shows its owner's normal booking/payment summary. QR data remains unsigned demo data, not a production travel credential.
+Boarding QR payloads contain only a schema version, booking reference, boat ID, trip date/time, guest count and seat numbers. They omit passenger name/contact details, payment method/reference, and account/security metadata. The visible pass still shows its owner's normal booking/payment summary. QR data is unsigned: boarding staff must validate the booking against the authenticated server manifest instead of trusting QR contents alone.
 
 No frontend can conceal the code and ordinary requests it needs to run. Password/reset-token submissions and session cookies remain necessary for authentication; protect them with HTTPS and the existing server-side session/ownership controls. Secrets and deployment settings must stay on the server, never in Vite-prefixed variables or public bundles.
+
+### Hindi/English and commercial deployment
+
+The web app has an English/हिन्दी selector, localized account/admin flows and
+confirmation/reset emails. It runs locally without the Android SDK.
+Razorpay hosted checkout is available with server-created INR orders, temporary
+seat holds, verified callbacks/webhooks and captured-payment checks. Demo mode
+remains available for local development and is blocked in production.
+
+Read [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) before enabling live bookings.
+It covers credentials, HTTPS hosting, the Dockerfile, backups, manual refunds and
+remaining business requirements. Sample inventory and policies must be replaced
+and live payment/email delivery validated before commercial launch.

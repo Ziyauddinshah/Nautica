@@ -84,3 +84,10 @@ test('email retry requires admin authentication and never resets already-sent me
  assert.equal((await call(endpoint,{method:'POST',body:{},cookie:signed.cookie})).status,200);assert.equal(kicked,2);
  const listed=await call('/api/admin/bookings',{cookie:signed.cookie});assert.equal(listed.data.bookings[0].notifications.length,2);assert.equal(listed.data.emailService.configured,true);
 });
+test('production requires the configured HTTPS origin and disables demo bookings',async()=>{
+ const {call,base}=await fixture({production:true,publicOrigin:'https://nautica.example.test'});
+ assert.equal((await call('/api/user/register',{method:'POST',body:{},origin:base})).status,403);
+ assert.equal((await call('/api/bookings',{method:'POST',body:input(),origin:'https://nautica.example.test'})).status,503);
+ const config=await call('/api/payments/config');assert.deepEqual(config.data,{mode:'disabled',enabled:false});
+ const health=await call('/api/health');assert.equal(health.status,200);assert.match(health.headers.get('content-security-policy'),/object-src 'none'/);assert.equal(health.headers.get('strict-transport-security'),'max-age=31536000');assert.equal(health.headers.get('referrer-policy'),'no-referrer');
+});

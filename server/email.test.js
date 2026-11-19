@@ -63,3 +63,11 @@ test('a crash during the last attempt becomes a recoverable failed notification 
  await service.drain();assert.equal(sends,0);assert.ok(notificationsFor(db,booking.id).every(job=>job.status==='failed'&&job.errorCode==='SMTP_DELIVERY_UNKNOWN'));
  service.retry(booking.id);await service.kick();assert.equal(sends,2);await service.stop();db.close();
 });
+test('Hindi confirmations translate business labels while preserving personal names and references',()=>{
+ const db=openStore(':memory:');try{
+  const pass=createBooking(db,input({name:'Admin',language:'hi'}));
+  const record=JSON.parse(db.prepare('SELECT record FROM bookings WHERE id=?').get(pass.id).record);
+  const message=confirmationMessage(record,'customer',config(),'guest@example.test','test');
+  assert.match(message.html,/lang="hi"/);assert.match(message.text,/सीट नंबर/);assert.match(message.text,/Admin/);assert.ok(message.text.includes(pass.id));assert.ok(!message.text.includes('सीट नंबर: undefined'));
+ }finally{db.close();}
+});

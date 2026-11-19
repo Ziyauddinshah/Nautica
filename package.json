@@ -17,9 +17,12 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "admin:create": "node --env-file-if-exists=.env scripts/admin-create.js",
     "test:server": "node --test server/*.test.js",
-    "email:verify": "node --env-file-if-exists=.env scripts/email-verify.js"
+    "email:verify": "node --env-file-if-exists=.env scripts/email-verify.js",
+    "production:check": "node --env-file-if-exists=.env scripts/production-check.js",
+    "db:backup": "node --env-file-if-exists=.env scripts/backup.js"
   },
   "dependencies": {
+    "@fontsource/noto-sans-devanagari": "^5.3.0",
     "nodemailer": "^10.6.0",
     "qrcode-generator": "1.4.4",
     "react": "^19.2.0",

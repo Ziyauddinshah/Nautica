@@ -58,7 +58,7 @@ test('weak passwords, duplicate emails, cross-site auth writes and brute force a
  assert.equal((await call('/api/user/login',{body:account()})).status,429);
 });
 test('production customer cookies require HTTPS',async()=>{
- const {call}=await setup({production:true});const registered=await call('/api/user/register',{body:account()});assert.match(registered.headers.get('set-cookie'),/; Secure/);
+ const {call}=await setup({production:true,publicOrigin:'https://nautica.example.test'});const registered=await call('/api/user/register',{body:account(),origin:'https://nautica.example.test'});assert.match(registered.headers.get('set-cookie'),/; Secure/);
 });
 test('upgrading the older booking schema preserves reservations without assigning ownership by email',async()=>{
  const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {DatabaseSync}=await import('node:sqlite');

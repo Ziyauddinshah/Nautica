@@ -6,6 +6,7 @@ export function installApiMock(){
  const respond=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  const mock=vi.fn(async(path,options={})=>{
   const url=new URL(path,'http://localhost:3000');
+  if(url.pathname==='/api/payments/config')return respond({mode:'demo',enabled:true});
   if(url.pathname==='/api/user/session')return respond({user});
   if(url.pathname==='/api/user/bookings')return respond({bookings:bookings.map(pass=>({pass})),total:bookings.length});
   if(url.pathname==='/api/availability')return respond({bookedSeats:bookings.filter(b=>b.boatId===url.searchParams.get('boatId')&&b.date===url.searchParams.get('date')&&b.slot===url.searchParams.get('slot')).flatMap(b=>b.seats),mode:'seats'});

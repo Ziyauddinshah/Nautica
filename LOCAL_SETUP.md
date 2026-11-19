@@ -15,7 +15,7 @@ For noninteractive setup, the admin-create script accepts `NAUTICA_ADMIN_USER` a
 - Sign in to your customer account, select a boat/date/time, and choose one unbooked seat per guest.
 - Check the prefilled lead guest name and phone. The email is fixed to your signed-in account.
 - Use UPI `alex@okaxis`, or card `4242 4242 4242 4242` with a future expiry and three-digit CVV, or choose a bank.
-- Do not enter real payment credentials. Payment is simulated; only a method summary is sent to the backend.
+- In local demo mode do not enter real payment credentials; only a method summary is sent to the backend. Razorpay mode uses hosted checkout.
 - Confirmation reserves selected seats in SQLite. Other seats remain available. The same seat numbers on a different boat/date/time remain independent.
 
 Base fares remain flat group booking fares. Add-ons and the 5% fee are recalculated on the server; client-supplied totals are ignored. The demonstration currency rate is ₹83/USD. Dates use the device/server calendar context; production destination timezone handling is still needed.
@@ -46,7 +46,7 @@ For a built app, run `npm run build` then `npm start` and open http://localhost:
 
 ## Verification
 
-`npm test` runs Vitest/jsdom React tests and Node HTTP/SQLite tests. `npm run build` checks the production bundle. Graphical browser layout, actual printing, real QR scanning and OS sharing still require manual checks. Payment integration, verified customer identity/contact details, signed boarding credentials and actual vessel blueprints remain outside this demo.
+`npm test` runs Vitest/jsdom React tests and Node HTTP/SQLite tests. `npm run build` checks the production bundle. Graphical browser layout, actual printing, real QR scanning and OS sharing still require manual checks. Razorpay test/live integration is available with credentials. Verified customer identity/contact details, signed boarding credentials and actual vessel blueprints still require deployment-specific work.
 
 
 ## Gmail email setup and acceptance checks
@@ -96,3 +96,11 @@ Reset delivery uses the same Gmail SMTP transport but does not persist email bod
 Use a desktop and a 320px-wide mobile viewport, then increase browser zoom/text size. Review the larger labels, input values, prices, seat numbers, account tables and wrapping pass exports. The mobile fleet should use a single column; tables may scroll horizontally rather than shrinking their text. Graphical browser checks were unavailable in the implementation workspace.
 
 Customer/admin responses are now explicit projections. Check authenticated account and admin requests in developer tools: authorized profile/booking/payment summaries must remain usable, while hashes, raw gateway fields, SMTP configuration/routing and diagnostic codes must be absent. QR data should contain only booking/trip/seat identity. No setup commands, `.env` values or SMTP credentials should appear in UI messages. Operational settings remain in the server environment and documentation, and unexpected service failures use general messages.
+
+## Hindi/English and Razorpay
+
+Choose English or हिन्दी in the app header. `.env` supports `PAYMENT_MODE=demo`
+(local simulation), `razorpay` (hosted INR checkout) or `disabled` (browse only).
+Set Razorpay keys and webhook secret only on the backend. Production blocks demo
+payments. See [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) for provider setup,
+HTTPS hosting, required real inventory/policies, manual refund handling and backups.

@@ -1,7 +1,9 @@
 export class ApiError extends Error { constructor(message,status,data={}){super(message);this.status=status;this.data=data;} }
 export async function request(path, { method='GET', body, signal } = {}) {
   let response;
-  try { response=await fetch(path,{method,credentials:'same-origin',signal:signal||AbortSignal.timeout(15000),headers:body?{'Content-Type':'application/json','X-Nautica-Request':'1'}:{},body:body?JSON.stringify(body):undefined}); }
+  let language='en';try{language=localStorage.getItem('nautica.language')==='hi'?'hi':'en';}catch{}
+
+  try { response=await fetch(path,{method,credentials:'same-origin',signal:signal||AbortSignal.timeout(15000),headers:{'X-Nautica-Language':language,...(body?{'Content-Type':'application/json','X-Nautica-Request':'1'}:{})},body:body?JSON.stringify(body):undefined}); }
   catch(error){if(error.name==='AbortError')throw error;throw new ApiError('Unable to connect. Check your connection and try again.',0);}
   let data;try{data=await response.json();}catch{throw new ApiError('Something went wrong. Please try again later.',response.status);}
   if(!data||typeof data!=='object'||Array.isArray(data))throw new ApiError('Something went wrong. Please try again later.',response.status);
