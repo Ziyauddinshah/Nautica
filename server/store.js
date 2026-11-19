@@ -12,13 +12,15 @@ export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nau
   const db = new DatabaseSync(filename);
   if (filename !== ':memory:') chmodSync(filename, 0o600);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
-    CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL, request_hash TEXT NOT NULL, boat_id TEXT NOT NULL, date TEXT NOT NULL, slot TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE COLLATE NOCASE,name TEXT NOT NULL,phone TEXT NOT NULL,salt TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL, request_hash TEXT NOT NULL, boat_id TEXT NOT NULL, date TEXT NOT NULL, slot TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL,user_id TEXT REFERENCES users(id));
     CREATE TABLE IF NOT EXISTS seats(boat_id TEXT, date TEXT, slot TEXT, seat TEXT, booking_id TEXT REFERENCES bookings(id), PRIMARY KEY(boat_id,date,slot,seat));
     CREATE TABLE IF NOT EXISTS admins(username TEXT PRIMARY KEY, salt TEXT NOT NULL, hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT REFERENCES admins(username), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS email_outbox(id INTEGER PRIMARY KEY, booking_id TEXT NOT NULL REFERENCES bookings(id), audience TEXT NOT NULL CHECK(audience IN ('customer','admin')), recipient TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0, lease_until INTEGER NOT NULL DEFAULT 0, message_id TEXT, last_error_code TEXT, sent_at TEXT, UNIQUE(booking_id,audience));
     CREATE INDEX IF NOT EXISTS email_due ON email_outbox(status,next_attempt_at);
     CREATE INDEX IF NOT EXISTS trip_bookings ON bookings(boat_id,date,slot);`);
+  if(!db.prepare('PRAGMA table_info(bookings)').all().some(column=>column.name==='user_id'))db.exec('ALTER TABLE bookings ADD COLUMN user_id TEXT REFERENCES users(id)');
   return db;
 }
 export function tripInfo(input) {
@@ -41,7 +43,7 @@ function paymentSummary(payment) {
   if (payment.type === 'card' && ['VISA','MASTERCARD','RUPAY','AMEX','CARD'].includes(payment.network) && /^\d{4}$/.test(payment.last4)) return { type: 'card', network: payment.network, last4: payment.last4, method: `${payment.network} · ${payment.last4}` };
   throw new ApiError(400, 'Choose a supported payment method.');
 }
-export function createBooking(db, input, mode = 'seats') {
+export function createBooking(db, input, mode = 'seats', owner = null) {
   const boat = tripInfo(input);
   if (input.date < N.localDate()) throw new ApiError(400, 'Choose today or a future date.');
   if (!N.validSeats(boat, input.seats, input.guests)) throw new ApiError(400, 'Choose one valid, distinct seat for every guest.');
@@ -54,13 +56,13 @@ export function createBooking(db, input, mode = 'seats') {
   const extras = [...new Set(['safety', ...input.extras])].sort();
   const seats = [...input.seats].sort();
   const payment = paymentSummary(input.payment);
-  const canonical = { boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, email, phone, extras, payment };
+  const canonical = { boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, email, phone, extras, payment, ownerId:owner?.id||null };
   const hash = digest(JSON.stringify(canonical));
   db.exec('BEGIN IMMEDIATE');
   try {
-    const existing = db.prepare('SELECT record, request_hash FROM bookings WHERE request_key=?').get(input.requestKey);
+    const existing = db.prepare('SELECT record, request_hash, user_id FROM bookings WHERE request_key=?').get(input.requestKey);
     if (existing) {
-      if (existing.request_hash !== hash) throw new ApiError(409, 'This booking request was already used with different details.');
+      if (existing.user_id !== (owner?.id||null) || existing.request_hash !== hash) throw new ApiError(409, 'This booking request was already used with different details.');
       db.exec('COMMIT');return JSON.parse(existing.record).pass;
     }
     const booked = availability(db, input).bookedSeats;
@@ -72,7 +74,7 @@ export function createBooking(db, input, mode = 'seats') {
     const paymentInfo = { ...payment, status: 'demo_paid', reference: `DEMO-${randomUUID()}`, paidAt: createdAt, amount: pricing.total, currency: 'INR' };
     const pass = { id, boatId: boat.id, date: input.date, slot: input.slot, guests: input.guests, seats, name, extras, total: pricing.total, currencyBase: 'INR', method: payment.method, paymentStatus: 'demo_paid', paymentReference: paymentInfo.reference, createdAt, serverConfirmed: true, emailStatus: 'requested' };
     const record = { id, status: 'confirmed', createdAt, bookingMode: mode, customer: { name, email, phone }, boat: { ...boat }, trip: { date: input.date, slot: input.slot, guests: input.guests, seats }, extras, pricing, payment: paymentInfo, pass };
-    db.prepare('INSERT INTO bookings VALUES(?,?,?,?,?,?,?,?)').run(id, input.requestKey, hash, boat.id, input.date, input.slot, createdAt, JSON.stringify(record));
+    db.prepare('INSERT INTO bookings(id,request_key,request_hash,boat_id,date,slot,created_at,record,user_id) VALUES(?,?,?,?,?,?,?,?,?)').run(id, input.requestKey, hash, boat.id, input.date, input.slot, createdAt, JSON.stringify(record), owner?.id||null);
     const reserve = db.prepare('INSERT INTO seats VALUES(?,?,?,?,?)');
     for (const seat of (mode === 'private' ? N.seatLayout(boat).map(seat => seat.id) : seats)) reserve.run(boat.id,input.date,input.slot,seat,id);
     const queue=db.prepare('INSERT INTO email_outbox(booking_id,audience,recipient) VALUES(?,?,?)');

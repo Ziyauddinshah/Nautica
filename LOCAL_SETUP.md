@@ -6,14 +6,14 @@
 2. Run `npm install` in the `web` branch.
 3. Run `npm run admin:create`; choose your username and a password of at least 12 characters. No credential is bundled in the app.
 4. Run `npm run dev` to start Vite on port 3000 and the API on port 3001.
-5. Open http://localhost:3000. Use http://localhost:3000/admin to sign in as admin.
+5. Open http://localhost:3000. Click **Sign in / Register** to create a customer account. Use `/account` for booking/payment history and `/admin` for admin sign-in.
 
 For noninteractive setup, the admin-create script accepts `NAUTICA_ADMIN_USER` and `NAUTICA_ADMIN_PASSWORD` from your environment or private `.env` file. Never commit the password. Changing the account with `admin:create` invalidates existing sessions. Passwords are salted and hashed using scrypt. Sessions expire after eight hours; logout revokes the server record. Five failed attempts per server-observed IP temporarily block login for 15 minutes.
 
 ## Test booking
 
-- Select a boat, date and time. Choose one unbooked seat per guest.
-- Enter a lead guest name, valid email and phone number.
+- Sign in to your customer account, select a boat/date/time, and choose one unbooked seat per guest.
+- Check the prefilled lead guest name and phone. The email is fixed to your signed-in account.
 - Use UPI `alex@okaxis`, or card `4242 4242 4242 4242` with a future expiry and three-digit CVV, or choose a bank.
 - Do not enter real payment credentials. Payment is simulated; only a method summary is sent to the backend.
 - Confirmation reserves selected seats in SQLite. Other seats remain available. The same seat numbers on a different boat/date/time remain independent.
@@ -23,7 +23,7 @@ Base fares remain flat group booking fares. Add-ons and the 5% fee are recalcula
 ## Confirm blocking across browsers
 
 1. Book seats 01 and 02 on Ganges Dawn for a chosen date/time.
-2. Open the same app in another browser or incognito window, connected to the same backend.
+2. Open the same app in another browser or incognito window, connected to the same backend, and sign in (or register a different test account).
 3. Choose the identical boat/date/time. Seats 01 and 02 must be grey and disabled, while other seats remain selectable.
 4. Open the map before another browser confirms; refresh it or wait 10 seconds. If two users submit the same seats simultaneously, one confirmation succeeds and the other gets a conflict and returns to the refreshed map.
 5. Restart the server. The booked seats must remain blocked.
@@ -40,7 +40,7 @@ An unauthenticated visitor must not receive passenger or payment records from `/
 
 The authoritative database is `data/nautica.sqlite`, including its WAL/SHM files when active. Do not delete it to clear browser storage. Stop the server before copying files directly, or use an appropriate SQLite backup process. The database is not encrypted. Keep it private and outside `dist/`.
 
-Legacy browser-only passes remain readable on their original browser origin, but are not automatically trusted as server reservations or included in admin records. Localhost, 127.0.0.1 and different ports use different browser pass caches. New bookings are centralized on the connected server even if the offline browser copy cannot be saved; download the confirmation immediately if storage is blocked.
+Customer history is now server-based and limited to the signed-in owner. Old guest/server bookings remain in admin records but are not auto-assigned to registrations by email. Older browser pass caches are ignored, not deleted automatically. Downloaded files remain on your device; clear legacy browser copies explicitly under Account security when appropriate. New history follows the signed-in account across devices connected to the same backend.
 
 For a built app, run `npm run build` then `npm start` and open http://localhost:3001. For deployment, use the Node server with a persistent database volume, an HTTPS reverse proxy, `PUBLIC_ORIGIN`, and `NODE_ENV=production`; Secure cookies require HTTPS. Static-only hosting cannot provide shared availability or admin access. A separate database/service design is needed for multiple independent server replicas.
 
@@ -64,3 +64,17 @@ The queue is part of the same database transaction as the reservation. Repeating
 Pending email jobs created after this feature was installed are processed when SMTP becomes configured, including after a restart. Older bookings without queue records show **Not queued (older booking)**. Sent messages cannot be resent with the failed-email retry button. Automatic delivery is at-least-once after process recovery; an SMTP-accepted message may be duplicated if the process stops before recording the success. A stable Message-ID is reused, but recipient providers control deduplication. The single-process worker does not provide bounce webhooks or inbox-delivery tracking.
 
 SMTP error details are reduced to safe codes in the admin panel; secrets and raw provider responses are not logged. Successful `SMTP accepted` status does not guarantee inbox placement. Check spam folders and account sending limits. App Passwords usually require Google 2-Step Verification and may be restricted by your account's administrator. No actual Gmail email was sent during automated tests: SMTP integration tests bind a local test server and use test-only recipients.
+
+
+## Customer-account acceptance checks
+
+1. Register customer A with a 12+ character password. Sign out and sign back in. Credentials must not appear in browser local storage or API responses.
+2. Book seats while signed in, then open `/account`. Check booking reference/status, boat/pier, date/time, seats, payment method/status/amount/reference, email status and downloadable pass.
+3. Register customer B in another browser. Its history must not include A's reservations. A request for A's booking ID using B's session must return 404, even if a body/query parameter supplies A's user ID or email.
+4. Sign out. History and pass dialogs must disappear. Session-protected endpoints must return 401. Reusing an expired/revoked cookie must fail. On a shared browser, switching accounts must not expose the previous account's in-memory history.
+5. In Account security, supply the current password and change to a new unique password. All prior sessions must stop working; the old password must fail and the new one must sign in.
+6. Check that registering an email matching a historical guest reservation does not claim that reservation. Legacy claims need a separate verified recovery process, which is not implemented here.
+
+Customer and admin credentials use different tables/cookies. Customer sessions cannot access admin endpoints and admin sessions do not impersonate customers. New bookings require customer login and store the authenticated owner in a database column with a foreign key. Customer contact/payment data stays on the backend and in temporary authenticated UI state; only an explicit file download produces an offline copy. Old browser caches from earlier versions may still exist until the user explicitly clears them, and are never treated as ownership evidence.
+
+Sessions are eight hours with HttpOnly, SameSite=Strict cookies; use HTTPS with `NODE_ENV=production` for Secure cookies. Login/registration/password changes have per-IP and per-account throttling; reverse-proxy deployments currently use the server-observed connection IP. Passwords use salted scrypt; database contact details are not encrypted at rest. Email verification, password-reset email, MFA, account deletion and profile editing are separate future features. No automatic guest-email matching, default customer password or browser-local admin/user role flag is used.

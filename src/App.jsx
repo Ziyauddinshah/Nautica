@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import * as N from './domain/booking.js';
-import { CURRENCY_KEY, PASSES_KEY, loadCurrency, loadPasses, savePass } from './lib/storage.js';
+import { CURRENCY_KEY, loadCurrency } from './lib/storage.js';
 import BoatArt from './components/BoatArt.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
+import useCustomerSession from './hooks/useCustomerSession.js';
+import AuthDialog from './components/AuthForm.jsx';
+import CustomerAccount from './components/CustomerAccount.jsx';
+import { request } from './lib/api.js';
 import BookingDialog from './components/BookingDialog.jsx';
 
 const tomorrow = () => { const date = new Date(); date.setDate(date.getDate() + 1); return N.localDate(date); };
@@ -10,8 +14,13 @@ function Brand() { return <a className="brand" href="./" aria-label="Nautica hom
 
 export default function App() {
   const [currency, setCurrency] = useState(loadCurrency);
-  const [passes, setPasses] = useState(() => loadPasses().value);
-  const [notice, setNotice] = useState(() => loadPasses().error || '');
+  const [history,setHistory]=useState({owner:null,items:[]});
+  const {user,setUser}=useCustomerSession();
+  const passes=history.owner===user?.id?history.items:[];
+  function setPasses(next){setHistory(previous=>({owner:user?.id||null,items:typeof next==='function'?next(previous.owner===user?.id?previous.items:[]):next}));}
+  const [authOpen,setAuthOpen]=useState(false);
+  const pendingAction=useRef(null),previousUser=useRef(null);
+  const [notice, setNotice] = useState('');
   const [filters, setFilters] = useState(() => ({ pier: '', date: tomorrow(), slot: N.slots[0], type: N.types[0], guests: 2 }));
   const [flow, setFlow] = useState(null);
   const filtersRef = useRef(null);
@@ -25,12 +34,21 @@ export default function App() {
   }, [notice]);
   useEffect(() => {
     function changed(event) {
-      if (event.key === PASSES_KEY || event.key === null) setPasses(loadPasses().value);
       if (event.key === CURRENCY_KEY || event.key === null) setCurrency(loadCurrency());
     }
     window.addEventListener('storage', changed);
     return () => window.removeEventListener('storage', changed);
   }, []);
+  useEffect(()=>{
+    const prior=previousUser.current;previousUser.current=user?.id||null;
+    if(prior&&prior!==user?.id)setFlow(null);
+    setPasses([]);if(!user)return;
+    const controller=new AbortController();
+    request('/api/user/bookings',{signal:controller.signal}).then(data=>{if(!controller.signal.aborted)setPasses(data.bookings.map(record=>record.pass));}).catch(error=>{if(error.name!=='AbortError'){if(error.status===401)setUser(null);else setNotice(error.message);}});
+    return()=>controller.abort();
+  },[user?.id]);
+  function beginAuth(action,opener){pendingAction.current=action;openerRef.current=opener;setAuthOpen(true);}
+  function signedIn(next){setUser(next);setAuthOpen(false);if(pendingAction.current)setFlow(pendingAction.current);pendingAction.current=null;}
   function toggleCurrency() {
     const next = currency === 'INR' ? 'USD' : 'INR';
     setCurrency(next);
@@ -42,11 +60,15 @@ export default function App() {
   function book(boat, event) {
     if (!filtersRef.current.reportValidity()) return;
     if (filters.date < N.localDate()) { setNotice('Choose today or a future boarding date.'); return; }
-    openFlow({ kind: 'booking', trip: { boatId: boat.id, date: filters.date, slot: filters.slot, guests: filters.guests, seats: [], extras: ['safety'] } }, event.currentTarget);
+    const next={kind:'booking',trip:{boatId:boat.id,date:filters.date,slot:filters.slot,guests:filters.guests,seats:[],extras:['safety']}};
+    if(user===undefined){setNotice('Checking your session. Please try again in a moment.');return;}
+    if(!user){beginAuth(next,event.currentTarget);return;}
+    openFlow(next,event.currentTarget);
   }
   if(window.location.pathname.replace(/\/$/,'')==='/admin')return <AdminDashboard/>;
+  if(window.location.pathname.replace(/\/$/,'')==='/account')return <CustomerAccount key={user?.id||'guest'} user={user} onUser={setUser} currency={currency} onCurrency={toggleCurrency}/>;
   return <>
-    <header className="header"><Brand/><span className="header-note">LESS ORDINARY. MORE OPEN WATER.</span><nav aria-label="Main navigation"><a className="quiet admin-link" href="/admin">Admin</a><button className="quiet" onClick={toggleCurrency} aria-label={`Currency ${currency}. Switch to ${currency === 'INR' ? 'USD' : 'INR'}`}>{currency === 'INR' ? '₹ INR' : '$ USD'} ⇄</button><button className="outline" onClick={event => openFlow({ kind: 'passes' }, event.currentTarget)}>My passes <span className="count">{passes.filter(pass => pass.date >= N.localDate()).length}</span></button></nav></header>
+    <header className="header"><Brand/><span className="header-note">LESS ORDINARY. MORE OPEN WATER.</span><nav aria-label="Main navigation">{user?<a className="quiet account-link" href="/account">My account</a>:<button className="quiet" disabled={user===undefined} onClick={event=>beginAuth(null,event.currentTarget)}>Sign in / Register</button>}<a className="quiet admin-link" href="/admin">Admin</a><button className="quiet" onClick={toggleCurrency} aria-label={`Currency ${currency}. Switch to ${currency === 'INR' ? 'USD' : 'INR'}`}>{currency === 'INR' ? '₹ INR' : '$ USD'} ⇄</button><button className="outline" disabled={user===undefined} onClick={event => user?openFlow({kind:'passes'},event.currentTarget):beginAuth({kind:'passes'},event.currentTarget)}>My passes <span className="count">{passes.filter(pass => pass.date >= N.localDate()).length}</span></button></nav></header>
     <main>
       <section className="hero"><div className="hero-copy"><p className="eyebrow"><span/> YOUR NEXT CHAPTER, ON THE WATER</p><h1>A different<br/>kind of <em>escape.</em></h1><p className="intro">Sunrise on the Ganges. Sunset on Lake Como.<br/>Find your boat. We’ll take care of the rest.</p><div className="hero-proof"><span>✧ Captain included</span><span>♡ Curated experiences</span><span>✓ Safety first</span></div></div><div className="hero-art" aria-label="Illustration of a sailboat on calm coastal water" role="img"><BoatArt boat={N.boats[0]}/></div><div className="hero-caption"><span>01 / THE OPEN WATER COLLECTION</span><span>Made for moments that stay with you ↗</span></div></section>
       <section className="search" aria-labelledby="search-title"><div className="search-heading"><h2 id="search-title">Where shall we take you?</h2><span>Your own boat. Your own pace.</span></div>
@@ -64,7 +86,8 @@ export default function App() {
       <section className="reassurance">{[['A boat for every moment', 'From quiet mornings to something worth celebrating.'], ['Good hands, great journeys', 'A dedicated captain and safety equipment on every trip.'], ['Less planning, more living', 'Choose your extras. Keep your pass. Enjoy the water.']].map(([title, text], index) => <div key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{text}</p></div>)}</section>
     </main>
     <footer><Brand/><span>Find a little more horizon.</span><small>Local demo · Payments are simulated · Fixed ₹83 / USD rate</small></footer>
-    {flow && <BookingDialog flow={flow} passes={passes} currency={currency} onCurrency={toggleCurrency} onClose={closeFlow} onBook={booking => { setPasses(previous=>[booking,...previous.filter(pass=>pass.id!==booking.id)]);try{savePass(booking);}catch{setNotice('Your booking is confirmed on the server, but the offline copy could not be saved. Download your pass now.');} }}/>}
+    {authOpen&&<AuthDialog onSuccess={signedIn} onClose={()=>{setAuthOpen(false);pendingAction.current=null;openerRef.current?.focus();}}/>}
+    {flow && user && previousUser.current===user.id && <BookingDialog flow={flow} user={user} passes={passes} currency={currency} onCurrency={toggleCurrency} onClose={closeFlow} onAuthExpired={()=>{setFlow(null);setUser(null);setNotice('Your session expired. Sign in again to continue.');}} onBook={booking => setPasses(previous=>[booking,...previous.filter(pass=>pass.id!==booking.id)])}/>}
     {notice && <div role="status" className="notice">{notice}</div>}
   </>;
 }

@@ -20,7 +20,7 @@ export function validatePayment(draft, tab) {
   return null;
 }
 
-export default function PaymentForm({ boat, trip, currency, draft, onDraft, onPay, onBack, error }) {
+export default function PaymentForm({ boat, trip, currency, draft, onDraft, onPay, onBack, error, accountEmail }) {
   const tab = draft.tab;
   const app = draft.app;
   const [query, setQuery] = useState('');
@@ -40,7 +40,7 @@ export default function PaymentForm({ boat, trip, currency, draft, onDraft, onPa
     <TripSummary boat={boat} trip={trip}/>
     <form ref={formRef} onSubmit={submit} noValidate>
       <label className="field">Lead guest name<input {...fieldProps('name')} autoComplete="name" maxLength={80} placeholder="Your full name"/></label>
-      <div className="two-fields"><label className="field">Email address<input {...fieldProps('email')} type="email" autoComplete="email" maxLength={150} placeholder="you@example.com"/></label><label className="field">Phone number<input {...fieldProps('phone')} type="tel" autoComplete="tel" maxLength={25} placeholder="+91 98765 43210"/></label></div>
+      <div className="two-fields"><label className="field">Email address<input {...fieldProps('email')} readOnly={!!accountEmail} type="email" autoComplete="email" maxLength={150} placeholder="you@example.com"/></label><label className="field">Phone number<input {...fieldProps('phone')} type="tel" autoComplete="tel" maxLength={25} placeholder="+91 98765 43210"/></label></div>
       <div className="tabs" role="tablist" aria-label="Payment method">{[['upi', 'UPI / QR'], ['card', 'Credit / Debit'], ['bank', 'Net banking']].map(([id, title], index, all) => <button key={id} id={`tab-${id}`} type="button" role="tab" aria-controls="payment-panel" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => changeTab(id)} onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();

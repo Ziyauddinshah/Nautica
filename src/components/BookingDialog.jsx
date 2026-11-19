@@ -6,14 +6,14 @@ import PaymentForm, { emptyDraft } from './PaymentForm.jsx';
 import { getAvailability, bookSeats } from '../lib/api.js';
 import BoardingPass from './BoardingPass.jsx';
 
-export default function BookingDialog({ flow, passes, currency, onCurrency, onClose, onBook }) {
+export default function BookingDialog({ flow, passes, currency, onCurrency, onClose, onBook, user, onAuthExpired }) {
   const dialogRef = useRef(null);
   const timerRef = useRef(null);
   const payLock = useRef(false);
   const [stage, setStage] = useState(flow.kind === 'booking' ? 'review' : flow.kind);
   const [trip, setTrip] = useState(flow.trip || null);
   const [activePass, setActivePass] = useState(flow.booking || null);
-  const [draft, setDraft] = useState(emptyDraft);
+  const [draft, setDraft] = useState(()=>({...emptyDraft(),name:user?.name||'',email:user?.email||'',phone:user?.phone||''}));
   const [error, setError] = useState('');
   const [booked, setBooked] = useState([]);
   const [availabilityState, setAvailabilityState] = useState('loading');
@@ -73,6 +73,7 @@ export default function BookingDialog({ flow, passes, currency, onCurrency, onCl
       }catch(error){
         if(!alive.current)return;
         setError(error.message);
+        if(error.status===401){onAuthExpired?.();return;}
         if(error.status===409){setBooked(error.data.bookedSeats||[]);setTrip(previous=>({...previous,seats:[]}));setStage('review');setRefreshKey(key=>key+1);requestKey.current=crypto.randomUUID();}
         else setStage('payment');
       }finally{payLock.current=false;}
@@ -88,9 +89,9 @@ export default function BookingDialog({ flow, passes, currency, onCurrency, onCl
         <div className="extras">{N.extras.map(extra => <label className="addon" key={extra.id}><input type="checkbox" checked={trip.extras.includes(extra.id)} disabled={extra.id === 'safety'} onChange={event => setTrip({ ...trip, extras: event.target.checked ? [...trip.extras, extra.id] : trip.extras.filter(id => id !== extra.id) })}/><span className="addon-text"><strong>{extra.name}</strong><small>{extra.detail}</small></span><span>{extra.price ? `+ ${N.money(extra.price, currency)}` : 'Included'}</span></label>)}</div>
         <PriceBreakdown boat={boat} trip={trip} currency={currency}/><button className="primary wide" onClick={proceed}>Proceed to payment · {N.money(N.amounts(boat, trip.extras).total, currency)} →</button><p className="demo-note">Group trip fare. Your captain is included. Only your selected seats are reserved.</p>
       </>}
-      {stage === 'payment' && <PaymentForm boat={boat} trip={trip} currency={currency} draft={draft} onDraft={setDraft} onPay={pay} onBack={() => { setError(''); setStage('review'); }} error={error}/>}
+      {stage === 'payment' && <PaymentForm boat={boat} trip={trip} currency={currency} draft={draft} onDraft={setDraft} accountEmail={user?.email} onPay={pay} onBack={() => { setError(''); setStage('review'); }} error={error}/>}
       {processing && <div className="processing" role="status"><div className="spinner"/><h2 id="flow-title" className="dialog-title">A moment, then the horizon.</h2><p className="subtitle">Simulating secure payment processing…</p></div>}
-      {stage === 'passes' && <><p className="steps">YOUR JOURNEYS</p><h2 id="flow-title" className="dialog-title">My boarding passes.</h2><p className="subtitle">Stored on this browser, on this device. Available offline.</p><div className="pass-list">{passes.length ? passes.map(pass => <button key={pass.id} className="saved-pass" onClick={() => { setActivePass(pass); setStage('pass'); }}><strong>{N.boats.find(boat => boat.id === pass.boatId).name}</strong><small>{pass.date} · {pass.slot}<br/>{pass.id} · {pass.guests} guests · {N.money(pass.total, currency)}</small></button>) : <div className="empty"><h3>Your horizon is waiting.</h3><p>Your first boarding pass will appear here after booking.</p></div>}</div></>}
+      {stage === 'passes' && <><p className="steps">YOUR JOURNEYS</p><h2 id="flow-title" className="dialog-title">My boarding passes.</h2><p className="subtitle">Your signed-in account bookings. Download passes for offline access.</p><div className="pass-list">{passes.length ? passes.map(pass => <button key={pass.id} className="saved-pass" onClick={() => { setActivePass(pass); setStage('pass'); }}><strong>{N.boats.find(boat => boat.id === pass.boatId).name}</strong><small>{pass.date} · {pass.slot}<br/>{pass.id} · {pass.guests} guests · {N.money(pass.total, currency)}</small></button>) : <div className="empty"><h3>Your horizon is waiting.</h3><p>Your first boarding pass will appear here after booking.</p></div>}</div></>}
       {(stage === 'confirmed' || stage === 'pass') && <BoardingPass booking={activePass} currency={currency} confirmed={stage === 'confirmed'} onExplore={close}/>}
     </div>
   </dialog>;

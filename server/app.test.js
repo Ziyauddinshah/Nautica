@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { openStore, setAdmin, availability, createBooking } from './store.js';
+import { registerUser } from './users.js';
 import { createApp } from './app.js';
 import * as N from '../src/domain/booking.js';
 
@@ -14,11 +15,11 @@ const resources=[];
 after(()=>{for(const cleanup of resources.reverse())cleanup();});
 async function fixture(options={}){
  const db=openStore(':memory:');setAdmin(db,'admin','a-long-test-password');
- const server=createApp(db,options);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const server=createApp(db,options);const customer=registerUser(db,{name:'Guest One',email:'guest@example.com',phone:'+919876543210',password:'customer-test-password'});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+server.address().port;
  resources.push(()=>{server.closeAllConnections();server.close();db.close();});
  const call=async(path,{method='GET',body,cookie,origin=base}={})=>{
-  const response=await fetch(base+path,{method,headers:{...(body?{'Content-Type':'application/json','X-Nautica-Request':'1',Origin:origin}:{}),...(cookie?{Cookie:cookie}:{})},body:body?JSON.stringify(body):undefined});
+  const response=await fetch(base+path,{method,headers:{...(body?{'Content-Type':'application/json','X-Nautica-Request':'1',Origin:origin}:{}),...{Cookie:cookie||'nautica_user='+customer.token}},body:body?JSON.stringify(body):undefined});
   return {status:response.status,data:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0],headers:response.headers};
  };
  return {db,server,call,base};
@@ -41,7 +42,7 @@ test('idempotent retry returns same booking; changed payload cannot reuse its ke
 });
 test('server recalculates totals and rejects invalid seats, contact details and dates',async()=>{
  const {call}=await fixture();
- for(const body of [input({seats:['01','01']}),input({seats:['01','99']}),input({email:'bad'}),input({phone:'12'}),input({date:'2027-02-30'}),input({date:'2020-01-01'})])assert.equal((await call('/api/bookings',{method:'POST',body})).status,400);
+ for(const body of [input({seats:['01','01']}),input({seats:['01','99']}),input({phone:'12'}),input({date:'2027-02-30'}),input({date:'2020-01-01'})])assert.equal((await call('/api/bookings',{method:'POST',body})).status,400);
  const created=await call('/api/bookings',{method:'POST',body:input({total:1,payment:{type:'card',network:'VISA',last4:'4242',number:'4242424242424242',cvv:'123'}})});assert.equal(created.data.booking.total,126000);assert.equal(created.data.booking.method,'VISA · 4242');
 });
 test('admin records require authentication; login exposes full summaries without raw card data',async()=>{

@@ -2,9 +2,12 @@ import { vi } from 'vitest';
 import * as N from '../src/domain/booking.js';
 export function installApiMock(){
  const bookings=[];
+ const user={id:'test-user',name:'Example Guest',email:'guest@example.com',phone:'+919876543210',createdAt:'2026-11-19T00:00:00Z'};
  const respond=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  const mock=vi.fn(async(path,options={})=>{
   const url=new URL(path,'http://localhost:3000');
+  if(url.pathname==='/api/user/session')return respond({user});
+  if(url.pathname==='/api/user/bookings')return respond({bookings:bookings.map(pass=>({pass})),total:bookings.length});
   if(url.pathname==='/api/availability')return respond({bookedSeats:bookings.filter(b=>b.boatId===url.searchParams.get('boatId')&&b.date===url.searchParams.get('date')&&b.slot===url.searchParams.get('slot')).flatMap(b=>b.seats),mode:'seats'});
   if(url.pathname==='/api/bookings'){
    const body=JSON.parse(options.body),boat=N.boats.find(b=>b.id===body.boatId);

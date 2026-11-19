@@ -1,6 +1,6 @@
 # Nautica — React + Vite + Node/SQLite
 
-A boat booking app with numbered seats, shared server availability, simulated checkout, saved boarding passes, and a protected admin dashboard.
+A boat booking app with customer registration/login, private booking and payment history, numbered seats, shared availability, simulated checkout, Gmail confirmations, and a protected admin dashboard.
 
 ## Run locally
 
@@ -17,8 +17,23 @@ npm run dev
 `admin:create` asks you to choose an admin username and a password of at least 12 characters. Password input is hidden. There is **no default admin password**. Re-running it for an existing username resets that password and revokes its active sessions.
 
 - Customer app: **http://localhost:3000**
+- Customer account/history: **http://localhost:3000/account**
 - Admin dashboard: **http://localhost:3000/admin**
 - API: localhost port **3001**, proxied through Vite. `npm run dev` starts both processes and requires port 3000 to be free.
+
+## Customer accounts and data access
+
+Customers can register with a name, email, phone and a unique password of at least 12 characters, then sign in before booking. **My account** shows the signed-in profile, paginated booking history, seat/trip details, boarding passes, payment amounts/references/status, and confirmation-email status. Booking status and demo payment status are shown separately.
+
+The backend assigns each new booking to the authenticated user ID. User IDs or email addresses submitted by the browser cannot change ownership. Customer history/detail endpoints filter by that ID on the server; another user's booking ID returns 404. The checkout email is fixed to the signed-in account, including SMTP confirmations. Admin permissions remain separate.
+
+Passwords are salted and hashed using scrypt (N=32768, r=8, p=3). Random session tokens are stored hashed server-side and issued in HttpOnly, SameSite=Strict cookies, with Secure required in production. Sessions expire after eight hours. Login, registration and password-change attempts are throttled; cross-origin writes are rejected. **Account security** allows a password change after checking the current password; this revokes every device session and requires a new login. Logout revokes the current session. Account changes refresh across tabs and on focus.
+
+No customer passwords, session tokens, booking history or payment records are persisted by the new frontend in local storage. Only the currency preference is stored there. Downloaded pass files remain on the user's device by explicit choice.
+
+Existing **guest/unowned bookings are not automatically assigned by matching email**, because registration does not prove ownership of past guest reservations. They remain available to authorized admins. Old browser-only pass copies are ignored by the account UI and are not imported into history; they are left untouched to avoid deleting user files. The signed-in Account security page provides an explicit option to clear old browser pass copies on a shared device.
+
+Email verification, forgotten-password recovery, MFA, account deletion and contact/profile editing are not implemented. Use HTTPS when deploying and keep database files/backups private; SQLite contact data is not encrypted at rest. This is a tested application implementation, not a claim that every deployment is secure by default.
 
 ## Seat blocking
 
@@ -43,9 +58,9 @@ Full PAN, CVV and UPI IDs are not sent to the server or saved. Email and phone a
 
 ## Persistence
 
-SQLite stores authoritative bookings, occupied seats, admin password hashes and sessions in **data/nautica.sqlite**. Restarting the server preserves them. This directory and `.env` are ignored by Git. Keep the database outside `dist/` and back it up appropriately; it contains passenger contact information.
+SQLite stores authoritative bookings, occupied seats, customer/admin password hashes and sessions in **data/nautica.sqlite**. Restarting the server preserves them. This directory and `.env` are ignored by Git. Keep the database outside `dist/` and back it up appropriately; it contains passenger contact information.
 
-Each browser keeps an additional offline pass copy using the previous app's storage keys. Legacy local-only passes still open, but they are **not imported into server inventory or admin records**. New availability and admin views work only when browsers connect to the same backend/database. A backend is required to book; static-only hosting is no longer sufficient.
+Signed-in customer history is loaded from the server. Legacy browser copies are no longer displayed in the account app, and unowned reservations are not auto-claimed. New availability, account history and admin views require the same connected backend/database. A backend is required to book; static-only hosting is insufficient.
 
 ## Gmail SMTP booking confirmations
 
@@ -91,7 +106,7 @@ Optional settings are documented in [.env.example](.env.example). Configure `PUB
 
 ## Scope and validation
 
-Payments remain **simulated**. The `demo_paid` status and `DEMO-` references are not bank/provider confirmations, no money is charged, and tickets are not valid for real travel. Integrate a real provider with verified callbacks before accepting payments. Seat diagrams remain illustrative and require confirmation against actual vessel plans. Customer accounts, contact verification, cancellation/refund flows and multi-instance database hosting are not implemented.
+Payments remain **simulated**. The `demo_paid` status and `DEMO-` references are not bank/provider confirmations, no money is charged, and tickets are not valid for real travel. Integrate a real provider with verified callbacks before accepting payments. Seat diagrams remain illustrative and require confirmation against actual vessel plans. Contact verification, cancellation/refund flows and multi-instance database hosting are not implemented.
 
 Tests cover seat blocking, conflicts, retries, persistence, server-calculated totals, protected admin access, login/logout, session cookies, login throttling, origin checks, customer validation, React seat states, checkout and admin views. Email tests cover separate recipients, HTML escaping, disabled configuration, retries, retry exhaustion, restart recovery and a real Nodemailer exchange against a local-only test SMTP server. Live Gmail authentication/delivery requires your own configuration and has not been verified in this workspace. Graphical browser, print dialogs and device sharing still require manual acceptance checks.
 

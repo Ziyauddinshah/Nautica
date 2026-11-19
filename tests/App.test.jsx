@@ -5,6 +5,7 @@ import App from '../src/App.jsx';
 import { PASSES_KEY } from '../src/lib/storage.js';
 
 async function startPayment() {
+  await screen.findByRole('link',{name:'My account'});
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
   await waitFor(()=>expect(screen.getByRole('button',{name:'Choose seats for me'}).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
@@ -20,6 +21,7 @@ describe('React booking flow', () => {
     expect(screen.getAllByRole('article')).toHaveLength(8);
     fireEvent.change(screen.getByLabelText('BOARDING PIER'), { target: { value: 'Assi Ghat' } });
     expect(screen.getAllByRole('article')).toHaveLength(2);
+    await screen.findByRole('link',{name:'My account'});
     fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
     await waitFor(()=>expect(screen.getByRole('button',{name:/Seat 01,/}).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
@@ -40,6 +42,7 @@ describe('React booking flow', () => {
   });
   it('validates UPI, saves selected seats, prevents duplicates, and reopens saved passes', async () => {
     const view = render(<App/>);await startPayment();
+    fireEvent.change(screen.getByLabelText('Lead guest name'),{target:{value:''}});
     fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
     expect(screen.getByRole('alert').textContent).toMatch(/full name/);
     fireEvent.change(screen.getByLabelText('Lead guest name'), { target: { value: 'आरव शर्मा · Élodie' } });
@@ -51,12 +54,13 @@ describe('React booking flow', () => {
     expect(screen.getByRole('button', { name: 'Close booking' }).disabled).toBe(true);
     await finishPayment();
     expect(screen.getByRole('heading', { name: 'Booking confirmed.' })).toBeTruthy();
-    const saved = JSON.parse(localStorage.getItem(PASSES_KEY));
-    expect(saved).toHaveLength(1);expect(saved[0].seats).toEqual(['01','02']);
-    expect(JSON.stringify(saved)).not.toContain('alex@okaxis');
+    expect(localStorage.getItem(PASSES_KEY)).toBeNull();
+    const sent=JSON.parse(fetch.mock.calls.find(([path,options])=>path==='/api/bookings'&&options.method==='POST')[1].body);
+    expect(sent.seats).toEqual(['01','02']);expect(JSON.stringify(sent)).not.toContain('alex@okaxis');
     view.unmount();render(<App/>);
+    await screen.findByRole('link',{name:'My account'});
     fireEvent.click(screen.getByRole('button', { name: /My passes/ }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Ganges Dawn/ }));
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: /Ganges Dawn/ }));
     expect(screen.getByRole('heading', { name: 'आरव शर्मा · Élodie' })).toBeTruthy();
     expect(screen.getByText('01, 02')).toBeTruthy();
   });
@@ -73,7 +77,7 @@ describe('React booking flow', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/unexpired/);
     fireEvent.change(screen.getByLabelText('Expiry'), { target: { value: '1299' } });
     fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
-    const saved = localStorage.getItem(PASSES_KEY);expect(saved).not.toContain('4242424242424242');expect(JSON.parse(saved)[0].method).toBe('VISA · 4242');
+    expect(localStorage.getItem(PASSES_KEY)).toBeNull();const sent=JSON.parse(fetch.mock.calls.find(([path,options])=>path==='/api/bookings'&&options.method==='POST')[1].body);expect(JSON.stringify(sent)).not.toContain('4242424242424242');expect(sent.payment.last4).toBe('4242');
   });
   it('keeps server-confirmed booking valid even when the browser offline cache is full', async () => {
     render(<App/>);await startPayment();
@@ -86,7 +90,7 @@ describe('React booking flow', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     fireEvent.click(screen.getByRole('button', { name: /Confirm demo payment/ }));await finishPayment();
     expect(screen.getByRole('heading', { name: 'Booking confirmed.' })).toBeTruthy();
-    expect(screen.getByText(/offline copy could not be saved/)).toBeTruthy();
+    expect(screen.queryByText(/offline copy could not be saved/)).toBeNull();
     expect(localStorage.getItem(PASSES_KEY)).toBeNull();
   });
 });
