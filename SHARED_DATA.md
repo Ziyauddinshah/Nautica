@@ -1,168 +1,109 @@
-# One backend, the same data on every device
+# Shared online data and SQLite migration
 
-Nautica stores accounts, password hashes, sessions, bookings, payment records,
-seat reservations and email jobs in its backend SQLite database. Cloning the
-GitHub repository on a second computer does **not** copy that database. The file
-is deliberately excluded from Git because it contains private customer data.
-An empty database on the second computer does not mean the first copy was erased.
+All production app servers connect to the **same online MongoDB cluster and
+MONGODB_DB**. Every customer device opens the same public HTTPS application URL
+and signs in to its account. User sessions, accounts, bookings, payment state,
+seat reservations, email jobs and rate limits live in MongoDB. Application
+containers have no local customer database volume. Local Community MongoDB is
+for testing only; production configuration rejects a local replica set and has
+no offline database fallback.
 
-Every phone, browser and computer must open the **same running backend URL** and
-sign in to the same account. Customers see their own bookings; admins see all
-bookings. Separate localhost installations, independent Docker volumes and
-static-only frontend hosting do not synchronize databases.
+GitHub stores code, not customers. `.env`, database files/exports, hashes and
+credentials must remain private. Your old SQLite database may still be on its
+original computer; cloning this branch does not import it automatically.
 
-## Share on a trusted local network
+## New production business with no old customer data
 
-On the computer that has your existing data, run:
+1. Create one online Atlas cluster (or properly secured remote TLS replica set).
+   Choose a tier, region and backup plan suitable for your reliability/volume
+   requirements. A free tier has service limits; it is not an unlimited production
+   availability guarantee.
+2. Restrict network access to your app hosts, create a least-privilege database
+   user, and set private MONGODB_URI/MONGODB_DB on every app replica. Use a valid
+   TLS connection string; secrets stay on the server.
+3. Set NODE_ENV=production, PUBLIC_ORIGIN to the shared HTTPS origin and
+   PAYMENT_MODE=disabled until providers/business details are ready.
+4. Run `npm run db:init` once, then `npm run admin:create`. Initialization creates
+   schema/indexes and a ready marker. It preserves existing initialized data and
+   refuses an incomplete migration. Run `npm run db:status` to check access/counts.
+5. Start app replicas behind one HTTPS ingress. See COMMERCIAL_LAUNCH.md.
 
-```sh
-npm ci
-npm run db:status
-npm run share
-```
+Do not initialize an empty database if you intend to recover existing customers.
+The application refuses to start against an uninitialized/incompatible namespace.
 
-`share` builds the frontend and serves it and the API together. It prints the
-computer's LAN URLs, such as `http://192.168.1.25:3001`. Open that **same URL** on
-all devices on the same trusted network; allow port 3001 through the host's local
-firewall if needed. Keep that one computer running. Sign in with your existing
-account on each device. Do not start another independent server on the second
-computer. `localhost` on your phone refers to the phone, not the first computer.
+## Import the existing SQLite data
 
-This HTTP mode is for trusted LAN testing only. It is not a secure internet
-hosting solution. Use HTTPS below for real customers, payments and password-reset
-links. Do not port-forward the LAN test server to the internet.
+The import is a controlled cutover to a **new MongoDB database**, not a live
+synchronizer or an automatic merge.
 
-## Persistent storage safeguards
-
-- Local default: `data/nautica.sqlite` relative to the application directory.
-  Relative `NAUTICA_DB` settings also use that directory; changing the shell's
-  working directory no longer silently selects another database.
-- Production requires an **absolute** `NAUTICA_DB` pointing to persistent storage,
-  for example `/var/lib/nautica/nautica.sqlite`, and an existing initialized database.
-  Missing storage or an empty uninitialized file stops startup instead of silently
-  creating a replacement. Check your disk/volume mount before initializing anything.
-- `npm run db:init` explicitly creates a new database, or initializes/upgrades an
-  existing one without dropping records. Use it only for a deliberate first setup.
-  It does not recover records from another computer.
-- `npm run db:status` reports the private database path, identity, integrity result
-  and record counts on the server console. It never creates a missing database.
-  Compare identities when diagnosing an accidental switch. Independent databases
-  have different identities; backup copies retain the source identity.
-- SQLite uses WAL, full synchronous commits, foreign keys and transaction/unique
-  constraints to prevent duplicate seat reservations. These protect committed
-  records; private backups and reliable disk storage are still required.
-
-## One HTTPS server for access from anywhere
-
-Choose one host with a persistent disk and a domain pointing to it. The supplied
-`compose.yaml` runs one application instance with Caddy for HTTPS. The application
-port stays private; only Caddy publishes ports 80/443. You need Docker Compose,
-working DNS and incoming access to those ports. This does not provision a host,
-register a domain or publish a deployment automatically.
-
-Copy `.env.example` to `.env`, keep it private and set:
-
-```dotenv
-NODE_ENV=production
-NAUTICA_DOMAIN=your-real-domain.example
-PUBLIC_ORIGIN=https://your-real-domain.example
-NAUTICA_DB=/app/data/nautica.sqlite
-PAYMENT_MODE=disabled
-```
-
-Replace the domain with your own. Keep payments disabled until the commercial
-launch requirements and Razorpay setup are completed. Configure Gmail separately
-for real confirmations and password reset. Do not use the sample `PAYMENT_MODE=demo`
-in production.
-
-For a **new business with no existing customer database**, initialize explicitly:
-
-```sh
-docker volume create nautica-data
-docker compose build
-docker compose run --rm --no-deps app node scripts/db-init.js
-docker compose run --rm --no-deps app node scripts/admin-create.js
-docker compose up -d
-```
-
-For **existing data**, use the migration procedure below instead of `db:init`.
-Then open `https://your-real-domain.example` on every device and sign in normally.
-The `nautica-data` volume is external and has a fixed name, so a normal Compose
-rebuild, restart, project-directory change or `down -v` does not delete it. Explicitly
-removing the volume, deleting its host or losing its disk still destroys its data
-unless you have a backup. Do not run multiple replicas or put SQLite on a shared
-network filesystem; use a managed transactional database before scaling beyond
-one application host.
-
-The earlier Docker build attempt in this workspace failed on an npm TLS trust
-chain. TLS verification remains enabled; the image/HTTPS deployment still needs
-validation on the chosen host. The Compose configuration is checked separately.
-
-## Move the existing data without losing it
-
-1. Locate the original computer and run `npm run db:status` from its original
-   Nautica checkout. If an older version was started from another working directory,
-   its database may be under that directory; point NAUTICA_DB at that original
-   absolute file path instead of initializing a replacement. Stop new bookings there while migrating so both hosts cannot
-   accept different reservations. Do not run `db:init` on an empty second machine
-   expecting it to download customers from GitHub.
-2. On the original server, create a consistent backup:
+1. Find the original SQLite database on the original computer. Previous versions
+   defaulted to `data/nautica.sqlite`; an older server started from another working
+   directory may have used a file there. Set legacy NAUTICA_DB to the actual
+   absolute path for the backup tool. Do not create a new empty source.
+2. Stop sales and reconcile any in-flight Razorpay transactions. Stop all old
+   application writers and email workers during final backup/cutover. Keep the
+   original file archived; do not run old and new systems accepting independent
+   reservations after the cutover.
+3. Create a consistent private backup:
 
    ```sh
-   npm run db:backup -- /PRIVATE_PATH/nautica-transfer.sqlite
+   npm run sqlite:backup -- /PRIVATE_PATH/nautica-transfer.sqlite
    ```
 
-   Use an absolute private path outside the web root. Transfer it securely to the
-   new host; it contains personal information, password hashes and session records.
-   Never upload it to GitHub or serve it from `dist`.
-3. With the destination application stopped and its target database **absent**,
-   restore to your configured `NAUTICA_DB`:
+   On an old checkout the command may still be named `db:backup`. The SQLite source
+   must exist. Do not copy only the main file from a running WAL database.
+4. Set the destination's private online MONGODB_URI and a **new, empty**
+   MONGODB_DB. Do **not** run db:init on this destination first. Run:
 
    ```sh
-   npm run db:restore -- /PRIVATE_PATH/nautica-transfer.sqlite
+   npm run db:migrate:sqlite -- /PRIVATE_PATH/nautica-transfer.sqlite
    npm run db:status
    ```
 
-   In the Compose setup, create the external volume and build the image first,
-   then mount the backup read-only for import:
+   The importer opens SQLite read-only, validates integrity, gates the destination
+   as `migrating`, creates indexes, copies data, checks user/booking/seat counts and
+   marks the namespace `ready` only when the import completes. App replicas cannot
+   start against a partial import. Existing initialized destinations are refused,
+   even if empty; existing data is never overwritten or merged.
+5. Compare counts and database identity, sign in to a customer and admin account,
+   inspect bookings/payment references, occupied seats and notification state.
+   Ownership is preserved by user ID; old guest bookings are not claimed by email.
+   Password hashes are preserved. Sessions and password-reset links are **not**
+   imported, so users must sign in again.
+6. Reconcile captured payments and unfinished provider orders before reopening.
+   Active unexpired holds/attempts are imported, but the importer cannot prove
+   external provider settlement. Sent email jobs stay sent; an interrupted sending
+   job may retry with its stable Message-ID. Check for duplicates/manual refunds.
+7. Configure every app server with the same destination, point the public URL at
+   the new replicas, and reopen traffic only after acceptance checks.
 
-   ```sh
-   docker compose run --rm --no-deps -v /PRIVATE_PATH/nautica-transfer.sqlite:/restore/backup.sqlite:ro app node scripts/db-restore.js /restore/backup.sqlite
-   docker compose run --rm --no-deps app node scripts/db-status.js
-   ```
+If an import fails, the source stays unchanged and the destination stays gated.
+Inspect the cause offline and retry into another new namespace. There is no
+implicit resume, merge, rollback of external payments, or destructive cleanup.
+If several old computers have independent databases, reconcile accounts, seats
+and payments before selecting/importing the authoritative copy.
 
-   `db:restore` verifies integrity and required Nautica tables, restores through
-   SQLite's backup API and publishes the file atomically. It refuses to overwrite
-   an existing target or WAL/SHM files. For an existing destination, preserve it
-   separately and restore to a new private path/volume; do not delete it blindly.
-   This copies one authoritative database; it does not merge independent user or
-   booking databases. If both computers have distinct bookings, reconcile them
-   before choosing the authoritative copy to avoid duplicate seats or payments.
-4. Compare record counts and database identity against the original, then start
-   the new backend and check account login, history, occupied seats and admin
-   records. Keep the original safely archived. Reconcile Razorpay activity and
-   pending email jobs around the migration before reopening sales.
-5. Direct every device to the new shared HTTPS URL. Moving domains may require
-   signing in again because cookies belong to each domain. Account records move
-   with the database; login cookies do not need to be copied between browsers.
+## MongoDB backup and recovery
 
-## Refresh and consistency
+Use your Atlas/managed cluster's supported backup/point-in-time recovery plan, or
+MongoDB's supported `mongodump`/`mongorestore` tooling for a self-managed replica
+set. Availability, retention and restore features depend on the chosen tier.
+Protect exports with encryption and access controls; they contain customer data
+and password hashes. Never put a MongoDB backup in the repository or `dist`.
+The `sqlite:backup`/`sqlite:restore` commands operate on legacy SQLite files only;
+they do not back up or restore MongoDB.
 
-The backend is the authority for account data, prices, seats and payments. API
-responses are not browser-cached. Booking submission checks/reserves seats in a
-transaction; concurrent conflicting submissions cannot both confirm.
+Test restoration into an isolated namespace, validate metadata/indexes/counts and
+reconcile payments/email activity since the backup before switching every app
+replica together. Never run replicas against different point-in-time restores.
+A backup is not the same as replication: neither replaces the other.
 
-Visible customer/account/admin views refresh every 15 seconds and when the page
-regains focus, becomes visible or reconnects. Seat availability polls every 10
-seconds and is checked again when reserving. Changes are not instantaneous live
-pushes; another screen may show the previous snapshot until refresh. Network
-errors are displayed rather than saving a new private browser copy, and a
-transient network failure does not discard an already known login. Unauthorized
-sessions are cleared. When diagnosing a discrepancy, verify the shared URL,
-account and server database identity first.
+## What happens without database connectivity
 
-Automated tests cover independent authenticated sessions, concurrent bookings,
-restart persistence, consistent backup/import, missing/empty storage refusal,
-working-directory changes and browser refresh behavior. They do not constitute
-an already running shared hosting service. Hosting/domain setup is still needed
-for access over the internet.
+The app refuses confirmations without primary/majority access, readiness reports
+unavailable, and sensitive API errors remain generic. It does not create an empty
+local database, accept offline seat bookings or acknowledge an unconfirmed write.
+An ambiguous timeout can mean the write already committed: check history or
+retry the same request key before creating a new payment. Visible account/admin
+pages refresh every 15 seconds and on focus/reconnect; seat maps poll every 10
+seconds. These screens are snapshots, not instantaneous live pushes.

@@ -1,8 +1,9 @@
-import {databasePath} from './database-path.js';
+import {mongoConfig} from './mongo-config.js';
 import {trustedResetOrigin} from './email.js';
 export function productionConfig(env=process.env){
  const production=env.NODE_ENV==='production';
- databasePath(env);
+ mongoConfig(env);
+ if(env.NAUTICA_PROXY_TOKEN&&env.NAUTICA_PROXY_TOKEN.length<32)throw new Error('NAUTICA_PROXY_TOKEN must have at least 32 characters.');
  const paymentMode=env.PAYMENT_MODE||(production?'disabled':'demo');
  if(!['demo','disabled','razorpay'].includes(paymentMode))throw new Error('PAYMENT_MODE must be demo, disabled or razorpay.');
  const publicOrigin=trustedResetOrigin(env.PUBLIC_ORIGIN,production)||'';

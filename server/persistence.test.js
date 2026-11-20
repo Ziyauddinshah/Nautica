@@ -18,7 +18,7 @@ test('database path stays anchored to the application across working directories
   const before=databasePath({});process.chdir(directory);
   assert.equal(databasePath({}),before);assert.equal(databasePath({NAUTICA_DB:'data/example.sqlite'}),resolve(projectRoot,'data/example.sqlite'));
   for(const value of [undefined,':memory:','data/relative.sqlite'])assert.throws(()=>databasePath({NODE_ENV:'production',NAUTICA_DB:value}),/persistent|absolute/);
-  assert.throws(()=>productionConfig({NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.test'}),/absolute/);
+  assert.throws(()=>productionConfig({NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.test'}),/MONGODB_URI/);
  }finally{process.chdir(original);rmSync(directory,{recursive:true,force:true});}
 });
 test('a missing production database stops startup instead of creating empty user data; initialization is explicit and repeatable',()=>{
@@ -27,10 +27,9 @@ test('a missing production database stops startup instead of creating empty user
   assert.throws(()=>openStore(filename,{mustExist:true}),/Persistent database is missing/);assert.equal(existsSync(filename),false);
   writeFileSync(filename,'');assert.throws(()=>openStore(filename,{mustExist:true}),/not initialized/);rmSync(filename);
   const env={...process.env,NODE_ENV:'production',NAUTICA_DB:filename,PUBLIC_ORIGIN:'https://example.test',PAYMENT_MODE:'disabled'};
-  const refused=spawnSync(process.execPath,[resolve(projectRoot,'server/index.js')],{env,encoding:'utf8',timeout:5000});assert.notEqual(refused.status,0);assert.match(refused.stderr,/Persistent database is missing/);assert.equal(existsSync(filename),false);
-  const run=()=>spawnSync(process.execPath,[resolve(projectRoot,'scripts/db-init.js')],{env,encoding:'utf8'});
-  const first=run(),second=run();assert.equal(first.status,0,first.stderr);assert.equal(second.status,0,second.stderr);
-  assert.equal(first.stdout.match(/Database identity: (.+)/)[1],second.stdout.match(/Database identity: (.+)/)[1]);
+  const refused=spawnSync(process.execPath,[resolve(projectRoot,'server/index.js')],{env,encoding:'utf8',timeout:5000});assert.notEqual(refused.status,0);assert.match(refused.stderr,/MONGODB_URI/);assert.equal(existsSync(filename),false);
+  const first=openStore(filename,{mustExist:false}),identity=first.prepare('SELECT instance_id FROM database_metadata').get().instance_id;first.close();
+  const second=openStore(filename,{mustExist:true});assert.equal(second.prepare('SELECT instance_id FROM database_metadata').get().instance_id,identity);second.close();
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
 test('independent device sessions share accounts and seats, survive restart and restore from a consistent backup',async()=>{

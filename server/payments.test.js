@@ -49,10 +49,10 @@ test('late captured payments cannot steal seats; refund attention persists acros
  }finally{f.db.close();}
 });
 test('production refuses demo payments, plaintext origins, missing credentials and test keys',()=>{
- assert.throws(()=>productionConfig({NAUTICA_DB:'/private/nautica.sqlite',NODE_ENV:'production',PUBLIC_ORIGIN:'http://example.com'}));
- assert.throws(()=>productionConfig({NAUTICA_DB:'/private/nautica.sqlite',NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.com',PAYMENT_MODE:'demo'}));
+ assert.throws(()=>productionConfig({MONGODB_URI:'mongodb+srv://test:test@cluster.example.test/',MONGODB_DB:'nautica',NODE_ENV:'production',PUBLIC_ORIGIN:'http://example.com'}));
+ assert.throws(()=>productionConfig({MONGODB_URI:'mongodb+srv://test:test@cluster.example.test/',MONGODB_DB:'nautica',NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.com',PAYMENT_MODE:'demo'}));
  assert.throws(()=>productionConfig({PAYMENT_MODE:'razorpay'}));
- assert.equal(productionConfig({NAUTICA_DB:'/private/nautica.sqlite',NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.com'}).paymentMode,'disabled');
+ assert.equal(productionConfig({MONGODB_URI:'mongodb+srv://test:test@cluster.example.test/',MONGODB_DB:'nautica',NODE_ENV:'production',PUBLIC_ORIGIN:'https://example.com'}).paymentMode,'disabled');
 });
 test('a failed order request retains an uncertain attempt and cannot generate duplicate remote orders',async()=>{
  const f=fixture();try{

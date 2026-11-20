@@ -65,13 +65,14 @@ test('seat reservations and bookings persist when SQLite is reopened',()=>{
 test('private booking mode atomically blocks the entire boat when configured',()=>{
  const db=openStore(':memory:');const body=input();createBooking(db,body,'private');assert.equal(availability(db,body).bookedSeats.length,6);assert.throws(()=>createBooking(db,input({seats:['03','04']}),'private'),error=>error.status===409);db.close();
 });
-test('admin setup CLI creates an account without embedding a default credential',async()=>{
- const { execFileSync }=await import('node:child_process');
- const directory=mkdtempSync(join(tmpdir(),'nautica-admin-')),filename=join(directory,'admin.sqlite');
- const password='Test-only-'+randomUUID();
- const output=execFileSync(process.execPath,['scripts/admin-create.js'],{cwd:process.cwd(),env:{...process.env,NAUTICA_DB:filename,NAUTICA_ADMIN_USER:'setup-admin',NAUTICA_ADMIN_PASSWORD:password},encoding:'utf8'});
- assert.match(output,/setup-admin is ready/);assert.ok(!output.includes(password));
- const db=openStore(filename);assert.ok(db.prepare('SELECT username FROM admins WHERE username=?').get('setup-admin'));assert.equal(db.prepare('SELECT hash FROM admins').get().hash.includes(password),false);db.close();rmSync(directory,{recursive:true,force:true});
+test('admin setup CLI refuses SQLite fallback when production MongoDB is unconfigured',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const directory=mkdtempSync(join(tmpdir(),'nautica-admin-')),filename=join(directory,'admin.sqlite'),password='Test-only-'+randomUUID();
+ try{
+  const result=spawnSync(process.execPath,['scripts/admin-create.js'],{env:{...process.env,NODE_ENV:'production',MONGODB_URI:'',MONGODB_DB:'nautica',NAUTICA_DB:filename,NAUTICA_ADMIN_USER:'setup-admin',NAUTICA_ADMIN_PASSWORD:password},encoding:'utf8'});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/MONGODB_URI/);assert.ok(!result.stderr.includes(password));
+  const {existsSync}=await import('node:fs');assert.equal(existsSync(filename),false);
+ }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
 test('email retry requires admin authentication and never resets already-sent messages',async()=>{

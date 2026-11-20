@@ -5,19 +5,20 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      NAUTICA_PROXY_TOKEN: ${NAUTICA_PROXY_TOKEN:?Set a random proxy token of at least 32 characters}
       NODE_ENV: production
       HOST: 0.0.0.0
-      NAUTICA_DB: /app/data/nautica.sqlite
+      MONGODB_URI: ${MONGODB_URI:?Configure the shared online MongoDB cluster}
+      MONGODB_DB: ${MONGODB_DB:?Set the production database name}
       PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
       PUBLIC_ORIGIN: https://${NAUTICA_DOMAIN:?Set NAUTICA_DOMAIN to your real hostname}
-    volumes:
-      - nautica-data:/app/data
     networks:
       - nautica
   https:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
+      NAUTICA_PROXY_TOKEN: ${NAUTICA_PROXY_TOKEN:?Set the shared proxy token}
       NAUTICA_DOMAIN: ${NAUTICA_DOMAIN:?Set NAUTICA_DOMAIN to your real hostname}
     ports:
       - "80:80"
@@ -34,8 +35,5 @@ services:
 networks:
   nautica:
 volumes:
-  nautica-data:
-    external: true
-    name: nautica-data
   caddy-data:
   caddy-config:

@@ -1,10 +1,10 @@
-import {openStore} from '../server/store.js';
+import {openRepository} from '../server/runtime.js';
 import {productionConfig} from '../server/config.js';
 import {emailConfig} from '../server/email.js';
 try{
  const config=productionConfig({...process.env,NODE_ENV:'production'});
- const db=openStore(undefined,{mustExist:true});db.close();
- console.log('Persistent database exists. Back up this database before host migration.');
+ const db=await openRepository({...process.env,NODE_ENV:'production'});try{await db.health();}finally{await db.close();}
+ console.log('Shared MongoDB cluster and initialized schema are reachable. Verify your backup plan before launch.');
  console.log('HTTPS origin and production payment configuration: valid.');
  console.log(config.paymentMode==='razorpay'?'Razorpay credentials present (not verified with provider).':'Online payments disabled.');
  const email=emailConfig({...process.env,NODE_ENV:'production'});

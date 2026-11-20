@@ -12,3 +12,6 @@ data/
 *.sqlite-wal
 *.sqlite-shm
 !.env.example
+
+.cache/
+*.bson

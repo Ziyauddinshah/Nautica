@@ -1,133 +1,128 @@
-# Nautica commercial launch
+# Multi-server commercial launch
 
-The web branch includes Hindi/English UI, SMTP confirmations, customer accounts,
-seat reservations and hosted Razorpay Checkout. It is a tested application
-foundation, not an already deployed or approved commercial booking service.
-Hosting/domain are undecided. Merchant credentials have not been supplied and no
-live charge, live email or provider webhook has been tested in this workspace.
+Nautica now uses MongoDB for shared online production storage and local MongoDB
+Community replica sets for testing. The code is not an already provisioned Atlas
+account, hosting deployment, approved merchant account or complete legal/business
+operation. Domain and hosting have not been chosen; no live payment/email has
+been accepted in this workspace.
 
-## Shared, persistent customer data
+## Database and migration
 
-Follow [SHARED_DATA.md](SHARED_DATA.md) before changing computers or hosts. All
-devices must use one backend URL. `compose.yaml` supplies a single-server HTTPS
-setup with a fixed external database volume. Production requires an absolute
-`NAUTICA_DB` and refuses missing/uninitialized storage. Restore existing data or
-explicitly run `db:init` for a new business; `db:status` helps compare identities
-and counts. GitHub does not store or synchronize private databases.
+Read [SHARED_DATA.md](SHARED_DATA.md). Production requires server-only MONGODB_URI,
+an explicit MONGODB_DB, validated TLS and a replica set/sharded cluster supporting
+transactions. All app servers must use the same cluster/namespace. Configure
+least-privilege credentials, app-host network rules, backups, alerts and a tested
+restore procedure. Estimate the total connection budget (up to 30 per app process)
+and choose database capacity/regions accordingly.
 
-## Local development
+Initialize a genuinely new database with db:init, or import existing SQLite data
+into a new namespace with db:migrate:sqlite. Never bypass a failed migration's
+readiness gate or silently point one replica at an empty alternative database.
+The runtime does not use SQLite; legacy tools are for migration/regression only.
 
-Use Node 24, `npm ci`, copy `.env.example` to `.env`, then `npm run dev`.
-Local `PAYMENT_MODE=demo` does not charge money. No Android SDK is needed.
-Select English or हिन्दी in the header; the preference is saved on that browser.
-Booking and reset emails use the language selected when requested. Boat IDs,
-seat IDs, dates, names, contact details and payment references stay unchanged.
+## Application replicas and HTTPS
 
-For gateway testing, use `PAYMENT_MODE=razorpay` with Razorpay **test** keys,
-a test webhook secret and a controlled HTTPS webhook endpoint. Do not enter live
-payment credentials into a demo checkout. Razorpay mode uses the provider's
-hosted checkout; Nautica does not collect card numbers, CVV or UPI credentials.
-All orders and captured amounts are INR. USD is only an indicative display at a
-fixed ₹83/USD rate; this is not a live exchange rate or a USD charge.
+Set the following privately on the deployment hosts:
 
-## Required before taking real bookings
+```dotenv
+NODE_ENV=production
+STORAGE_PROVIDER=mongodb
+MONGODB_URI=mongodb+srv://YOUR_PRIVATE_ATLAS_CONNECTION_STRING
+MONGODB_DB=nautica
+NAUTICA_DOMAIN=YOUR_REAL_HOSTNAME
+PUBLIC_ORIGIN=https://YOUR_REAL_HOSTNAME
+PAYMENT_MODE=disabled
+NAUTICA_PROXY_TOKEN=YOUR_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS
+```
 
-- Replace the sample fleet, illustrative seat layouts, reviews and international
-  destinations in `src/domain/booking.js` with boats you actually operate. Verify
-  capacities, captain arrangements, safety equipment, departure time zones,
-  schedules, prices and all displayed marketing claims. The current date/slot
-  model has no operator cancellation, weather or rescheduling workflow.
-- Supply the legal business identity, support contact, privacy notice, retention
-  and deletion procedure, terms, cancellation/refund rules and any required
-  consent. Have qualified advisers review local boating permissions, insurance,
-  taxes/GST and invoicing obligations. The current 5% port fee is not a tax invoice.
-- Choose a domain and hosting with a persistent private disk. This SQLite design
-  supports a **single application instance**; do not run independent replicas or
-  deploy onto ephemeral/serverless filesystems. Plan a shared transactional
-  database before scaling horizontally.
-- Activate a Razorpay merchant account, configure automatic capture, set live keys
-  and a separate strong webhook secret. Subscribe to `payment.captured` and
-  `order.paid` at `https://YOUR_DOMAIN/api/payments/razorpay/webhook`. Exercise a
-  controlled live payment, signature verification, callback loss, webhook retry,
-  refund and settlement reconciliation before opening sales.
-- Configure Gmail SMTP with an App Password and the admin recipient. Run
-  `npm run email:verify` and test customer/admin confirmations and password-reset
-  delivery in both languages. Plan SMTP sending limits and delivery monitoring.
-- Set `NODE_ENV=production`, `PUBLIC_ORIGIN=https://YOUR_DOMAIN`,
-  `PAYMENT_MODE=razorpay`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`,
-  `RAZORPAY_WEBHOOK_SECRET`. Run `npm run production:check`. This checks settings,
-  not your merchant approval, actual delivery or business readiness. Production
-  refuses demo payments and test keys; `PAYMENT_MODE=disabled` permits browsing
-  without accepting bookings.
-- Create an individual admin with `npm run admin:create`; use a unique password,
-  restrict admin access at the HTTPS proxy/VPN and establish an account recovery
-  process. Customer email verification and admin MFA are not implemented.
-- Run `npm test` and `npm run build`, review dependencies and perform independent
-  security/accessibility and operational acceptance reviews for your deployment.
+Use the real provider connection string with its credentials properly URL-encoded.
+Do not commit it or send it to the browser. Generate the proxy token locally, for
+example with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+and store it privately. It is not a customer login token.
 
-## HTTPS deployment
+With Docker Compose and a domain resolving to the ingress host, open ports 80/443:
 
-`npm ci && npm run build && npm start` serves both frontend and API on port 3001.
-Place it behind a TLS reverse proxy, forwarding the API and static routes to the
-same origin. Keep port 3001 private. Set PUBLIC_ORIGIN to the exact HTTPS origin;
-production writes reject other origins. Cookies are HttpOnly, SameSite=Strict
-and Secure. SMTP credentials, gateway secrets and database files must remain
-server-side and outside `dist`. Never prefix secrets with `VITE_`.
+```sh
+docker compose build
+# New database ONLY; existing users must follow the migration guide instead.
+docker compose run --rm --no-deps app node scripts/db-init.js
+docker compose run --rm --no-deps app node scripts/admin-create.js
+docker compose up -d --scale app=2
+```
 
-A non-root Node 24 Dockerfile is included. Build with `docker build -t nautica .`.
-Provide environment variables at runtime, mount `/app/data` on a private persistent
-volume writable by UID 1000, and place HTTPS in front of the container. Never copy
-`.env` into an image. Initialize a new persistent database explicitly with `node scripts/db-init.js`, or restore the existing one with `node scripts/db-restore.js /private/backup.sqlite`, before the first application startup. Set PUBLIC_ORIGIN before startup; the default production
-payment mode is disabled. The Docker build was attempted here but npm inside the build rejected this
-workspace’s TLS certificate chain (`SELF_SIGNED_CERT_IN_CHAIN`). TLS verification
-was kept enabled. Validate the image on your chosen host or configure your
-organization’s trusted build CA; no completed container image is claimed.
+Caddy discovers app replica addresses through Docker DNS, distributes requests and
+injects the private proxy token. The backend accepts forwarded client IPs only
+with that proof or from configured TRUSTED_PROXY_IPS; forged headers are ignored.
+This allows shared per-client rate limits without trusting arbitrary headers.
+The API port is not published. Configure any CDN/outer ingress's forwarding rules
+and trusted peers correctly; do not assume its unverified client-IP header is safe.
+For multiple physical hosts, deploy the same app image/config behind your chosen
+HTTPS load balancer and pass the proxy proof from a trusted ingress, or configure
+explicit trusted proxy socket IPs. There is no cookie affinity requirement. Every replica must use the same public
+origin, merchant/webhook secrets, pricing release and compatible schema. Drain
+checkouts before changing prices or merchant settings; fare changes during an
+open checkout can require manual refund review.
 
-If the proxy connects from a known address, set `TRUSTED_PROXY_IPS` to that exact
-socket IP (comma separated if needed). The app uses the rightmost forwarded IP
-only for explicitly trusted peers; the proxy must overwrite or append the actual
-client address. Forwarded IPs from other peers are ignored. Rate limits are in
-process and reset on restart. Use edge rate limits/WAF for internet traffic;
-without trusted proxy configuration users behind the proxy share rate limits.
+Caddy storage volumes contain TLS state only; user data stays in online MongoDB.
+Removing/replacing an application container does not remove MongoDB records. Never
+run local MongoDB inside production app containers as a fallback. A single Compose
+ingress host is still a failure domain; plan redundant ingress/hosts if required.
 
-## Payments, holds and refunds
+Run `npm run production:check`, `npm test`, `npm run test:mongodb` and `npm run build`.
+The production check validates cluster/schema reachability and settings, not legal
+readiness, merchant approval, inbox delivery or load capacity. Docker builds in
+this workspace previously failed because npm inside the image did not trust its
+TLS interception chain; configure a trusted build CA or validate the image on the
+chosen host. TLS verification stays enabled. Compose configuration is validated
+separately; no deployed image/HTTPS endpoint is claimed here.
 
-Only selected seats are held for 15 minutes during checkout. Other guests can
-book remaining seats. The server calculates amounts and verifies callback HMAC,
-then fetches the payment from Razorpay to require captured INR funds for that
-order and amount. Webhooks are verified against the raw body with a separate
-secret. Duplicate notifications reuse the existing booking and email jobs.
-A network timeout during order creation is retained as an uncertain attempt;
-it must not generate another remote order under the same request key.
+## Provider and business setup before sales
 
-If capture arrives after the hold expires, confirmation succeeds only if those
-seats are still free and the trip date is valid. Otherwise the attempt becomes
-`refund_required`, appears in the admin dashboard and in the customer's payment
-history, and does not issue a boarding pass. **Refunds are manual in Razorpay
-Dashboard.** Establish staff alerts and a reconciliation schedule; the app does
-not automatically refund, mark refunded attempts resolved or email failed-booking
-refund instructions. Retain the Razorpay payment reference for reconciliation.
-Authorized but uncaptured payments remain pending; investigate in the provider
-Dashboard. Check history before retrying to avoid paying twice. Do not launch
-unless staff can service these cases and publish the applicable refund policy.
+- Replace sample fleet, reviews, illustrative seating plans and destinations with
+  actual boats, capacities, schedules/time zones, safety equipment and prices.
+  The current 5% port fee is not a tax invoice. Operator weather/cancellation,
+  rescheduling and destination timezone workflows need business-specific work.
+- Supply business identity, support contact, privacy/retention/deletion procedures,
+  terms and cancellation/refund policies. Review local permissions, insurance,
+  taxes/GST and invoicing obligations with qualified advisers.
+- Activate Razorpay and configure automatic capture, live keys and a separate
+  webhook secret. Subscribe to payment.captured/order.paid at
+  `/api/payments/razorpay/webhook`. Exercise controlled live payment, callback loss,
+  signed webhook retries, reconciliation and refund handling before sales.
+- Configure Gmail SMTP using an App Password and private admin recipient. Run
+  `npm run email:verify` and verify both languages, customer/admin confirmations
+  and password-reset delivery. Review sending limits and spam handling.
+- Enable `PAYMENT_MODE=razorpay` only after acceptance. Production rejects demo
+  payments and test keys. Orders/capture checks are INR; USD is an indicative
+  display using a fixed ₹83/USD conversion, not a USD charge or live FX quote.
+- Create individual admin credentials and restrict admin access as appropriate.
+  Admin MFA and customer email verification are not implemented. Arrange password
+  recovery and incident response without sharing accounts.
+- Perform target-host security, accessibility, browser/printing/QR and load checks.
 
-## Backup, restore and monitoring
+## Partitions, payments and delivery
 
-Use `npm run db:backup -- /PRIVATE_PATH/nautica-YYYY-MM-DD.sqlite` for a consistent
-SQLite online backup. The destination must be new and outside the public folder.
-Encrypt backups, restrict access, copy them off the host, choose retention and
-test restoration. Do not copy a live SQLite file while ignoring its WAL.
+The system prioritizes reservation consistency. A partition without a reachable
+majority can make requests unavailable. It cannot guarantee both uninterrupted
+writes and consistent reservations through every partition. Do not weaken write
+concern, read from stale secondaries or accept offline bookings to hide an outage.
 
-To restore, stop the application, preserve the current database and its WAL/SHM
-as an incident copy, restore a verified backup to NAUTICA_DB with permissions
-0600 and ownership matching the application user, remove old WAL/SHM only while
-the application is stopped, then restart. Check account access, seat occupancy,
-email queue and Razorpay transactions since the backup before reopening sales.
-Never commit databases or backups. They contain personal information.
+Seat holds last 15 minutes. Captured payments confirm only matching INR amounts
+and available seats. Late captures with conflicts become refund_required, visible
+to admins and the affected customer, without a boarding pass. Refunds are manual
+in Razorpay Dashboard; resolution tracking/automatic refunds and failed-booking
+refund emails are not implemented. Staff must monitor and reconcile these cases.
+Unknown order/commit outcomes must be investigated or retried idempotently; never
+blindly charge again after a timeout. Provider reconciliation remains necessary
+for external payments whose notification never reaches the application.
 
-Monitor `/api/health`, TLS expiry, disk space, process restarts, failed SMTP jobs,
-Razorpay webhook delivery and captured payments without confirmed bookings.
-The health route checks database access; it does not prove SMTP/gateway delivery.
-Use a process manager and private structured logs without passwords, reset links,
-SMTP messages, full customer payloads or payment secrets. Booking records and
-email outbox are durable; shutdown waits for active email sends.
+Email outbox claims are fenced across replicas, with stable Message-IDs, bounded
+SMTP timeouts and retries. SMTP delivery remains at least once after a crash or
+partition at the acceptance/acknowledgement boundary; duplicate delivery is possible.
+MongoDB transaction retries never send SMTP or create provider orders themselves.
+
+Monitor `/api/health` as readiness, primary/replica/quorum state, failovers, pool
+usage, latency, expired leases, failed emails and captured payments without
+bookings. Synchronize clocks. Keep logs private and exclude credentials, reset
+links, SMTP bodies, full customer payloads and provider secrets. Shut down replicas
+gracefully and test failover/restore procedures before expanding capacity.

@@ -1,114 +1,64 @@
-# Local setup and acceptance checks
+# Local testing
 
-## Same data across devices
+Use Node 24. No Android SDK is needed. MongoDB is now the application's database;
+SQLite is retained only for migration tools and regression fixtures.
 
-See [SHARED_DATA.md](SHARED_DATA.md). Running the repository separately on another
-computer creates a separate database; it does not erase or download the original.
-Use `npm run share` on one computer for trusted LAN testing, or one HTTPS hosted
-backend for access from anywhere. Run `npm run db:status` on the original machine
-and migrate its database before changing hosts.
+1. Run `npm ci` and copy `.env.example` to private `.env`.
+2. Keep the development values `MONGODB_URI=mongodb://127.0.0.1:27017/?replicaSet=rs0`
+   and `MONGODB_DB=nautica_test`.
+3. Run `npm run mongo:local` in a separate terminal. The helper downloads the
+   community MongoDB binary on first use, or uses `MONGOMS_SYSTEM_BINARY`. The
+   binary must already be installed/cached to run without internet. Set
+   `MONGOMS_DOWNLOAD_DIR` if you need a different cache directory.
+4. For a genuinely new test database, run `npm run db:init`, then
+   `npm run admin:create`. No default admin password is provided. For existing
+   customers, follow the migration guide instead of creating empty records.
+5. Run `npm run dev`; open http://localhost:3000, `/account` and `/admin`.
 
-## First start
+Local test data persists in `data/mongo-local`; stopping the helper does not delete
+it. Never commit that directory, `.env` or database exports. Do not run a second
+MongoDB process using the same data directory. If you installed Community Edition
+separately, configure/initiate a replica set and set MONGODB_URI to it instead.
+Standalone `mongod` is rejected because bookings require transactions.
 
-1. Install Node.js 22.12+ (Node 24 LTS recommended).
-2. Run `npm install` in the `web` branch.
-3. Run `npm run admin:create`; choose your username and a password of at least 12 characters. No credential is bundled in the app.
-4. Run `npm run dev` to start Vite on port 3000 and the API on port 3001.
-5. Open http://localhost:3000. Click **Sign in / Register** to create a customer account. Use `/account` for booking/payment history and `/admin` for admin sign-in.
+## Acceptance checks
 
-For noninteractive setup, the admin-create script accepts `NAUTICA_ADMIN_USER` and `NAUTICA_ADMIN_PASSWORD` from your environment or private `.env` file. Never commit the password. Changing the account with `admin:create` invalidates existing sessions. Passwords are salted and hashed using scrypt. Sessions expire after eight hours; logout revokes the server record. Five failed attempts per server-observed IP temporarily block login for 15 minutes.
+- Register a customer; choose a boat/date/time and one available seat per guest.
+- In `PAYMENT_MODE=demo`, use test-only payment fields; no money is charged.
+- Open another browser/device using the same backend URL, or another development
+  app process configured with the same MongoDB database. Sign in again to the
+  same account; its booking history must match. Cookies are specific to the URL.
+- Book conflicting seats simultaneously. One request confirms and the other
+  returns a conflict. Other seats and other trips remain available.
+- Refresh/admin/account views or wait 15 seconds. Seat maps poll every 10 seconds.
+- Restart the app process and local MongoDB helper: confirmed accounts/bookings
+  remain in the persistent test data directory.
+- Change/reset the password and verify prior sessions fail across app replicas.
+  Reset email needs configured SMTP and a trusted origin; real password-reset
+  links and internet testing should use HTTPS.
+- Configure a local SMTP test transport or a controlled Gmail account; verify
+  separate Hindi/English customer/admin confirmations and retry visibility.
 
-## Test booking
+`npm run share` serves the built frontend and backend on a trusted LAN and prints
+LAN URLs. It is HTTP testing only; do not expose it to the internet. For real
+customers use the shared HTTPS origin and online MongoDB.
 
-- Sign in to your customer account, select a boat/date/time, and choose one unbooked seat per guest.
-- Check the prefilled lead guest name and phone. The email is fixed to your signed-in account.
-- Use UPI `alex@okaxis`, or card `4242 4242 4242 4242` with a future expiry and three-digit CVV, or choose a bank.
-- In local demo mode do not enter real payment credentials; only a method summary is sent to the backend. Razorpay mode uses hosted checkout.
-- Confirmation reserves selected seats in SQLite. Other seats remain available. The same seat numbers on a different boat/date/time remain independent.
+## Automated checks
 
-Base fares remain flat group booking fares. Add-ons and the 5% fee are recalculated on the server; client-supplied totals are ignored. The demonstration currency rate is ₹83/USD. Dates use the device/server calendar context; production destination timezone handling is still needed.
+```sh
+npm test
+npm run test:mongodb
+npm run build
+```
 
-## Confirm blocking across browsers
+The integration suite starts an isolated three-member local replica set. It does
+not use MONGODB_URI/MONGODB_DB from your production environment and removes its
+own test databases afterward. First-run binary download needs internet; a cached
+binary or MONGOMS_SYSTEM_BINARY enables offline testing. Quorum-loss tests stop
+and restart only suite-owned MongoDB processes.
 
-1. Book seats 01 and 02 on Ganges Dawn for a chosen date/time.
-2. Open the same app in another browser or incognito window, connected to the same backend, and sign in (or register a different test account).
-3. Choose the identical boat/date/time. Seats 01 and 02 must be grey and disabled, while other seats remain selectable.
-4. Open the map before another browser confirms; refresh it or wait 10 seconds. If two users submit the same seats simultaneously, one confirmation succeeds and the other gets a conflict and returns to the refreshed map.
-5. Restart the server. The booked seats must remain blocked.
-
-In local demo mode selections are not temporary holds; Razorpay checkout creates 15-minute holds. The authoritative check happens at final submission. For a network interruption, retry the same checkout details; idempotency prevents the same request from creating a duplicate. If a confirmation cannot be recovered, the administrator can locate it using the passenger/contact details.
-
-## Check the admin panel
-
-Sign in at `/admin`. Search by passenger name, email, phone or booking reference. Filter boat/date/time, open **View details**, and inspect customer contact, boat, seats, extras, totals, demo payment method/status/reference and timestamps. The seat manifest shows every passenger seat for that trip; clicking a booked seat opens its owner's booking.
-
-An unauthenticated visitor must not receive passenger or payment records from `/api/admin/bookings`. Logout clears access; passwords and session tokens are not stored in browser local storage. Passenger email/phone are excluded from public availability and boarding QR payloads. Test bookings remain in the local database until you deliberately remove or archive that database; no cancellation/deletion UI is provided.
-
-## Storage and hosting
-
-The authoritative local database is `data/nautica.sqlite` relative to the application directory, including its WAL/SHM files when active. Do not delete it to clear browser storage. Stop the server before copying files directly, or use an appropriate SQLite backup process. The database is not encrypted. Keep it private and outside `dist/`.
-
-Customer history is now server-based and limited to the signed-in owner. Old guest/server bookings remain in admin records but are not auto-assigned to registrations by email. Older browser pass caches are ignored, not deleted automatically. Downloaded files remain on your device; clear legacy browser copies explicitly under Account security when appropriate. New history follows the signed-in account across devices connected to the same backend.
-
-For a built app, run `npm run build` then `npm start` and open http://localhost:3001. For deployment, use the Node server with an absolute `NAUTICA_DB` on persistent storage, an existing initialized/restored database, an HTTPS reverse proxy, `PUBLIC_ORIGIN`, and `NODE_ENV=production`; Secure cookies require HTTPS. Static-only hosting cannot provide shared availability or admin access. A separate database/service design is needed for multiple independent server replicas.
-
-## Verification
-
-`npm test` runs Vitest/jsdom React tests and Node HTTP/SQLite tests. `npm run build` checks the production bundle. Graphical browser layout, actual printing, real QR scanning and OS sharing still require manual checks. Razorpay test/live integration is available with credentials. Verified customer identity/contact details, signed boarding credentials and actual vessel blueprints still require deployment-specific work.
-
-
-## Gmail email setup and acceptance checks
-
-Copy `.env.example` to `.env` and set `SMTP_ENABLED=true`, `SMTP_USER` to the sender Gmail address, `SMTP_PASS` to a Google App Password, and `SMTP_ADMIN_TO` to the admin recipient. Keep the default `SMTP_HOST=smtp.gmail.com` and `SMTP_PORT=465`, or use port 587 for mandatory STARTTLS. Normal Gmail passwords are not supported by this setup. Never commit `.env` or add SMTP credentials to Vite frontend variables.
-
-1. Run `npm run email:verify`; success verifies connection/authentication only, not inbox delivery.
-2. Restart the app server to load the SMTP settings.
-3. Make a new booking with an email address you control. Expect a customer confirmation at that address and a separate admin confirmation at `SMTP_ADMIN_TO`.
-4. In `/admin`, refresh the booking and check each recipient's email status, attempt count and sent timestamp. Open the message and verify boat, date/time, seats, extras, total and the clear simulated-payment notice.
-5. To test failure safely, use invalid SMTP credentials on a local test instance. The booking must still confirm and reserve its seats. Status should become failed; the queue retries with backoff. Fix credentials, restart, and use **Retry failed emails** in admin details if needed.
-
-The queue is part of the same database transaction as the reservation. Repeating an idempotent booking request does not create new email jobs. Two roles are tracked separately even if the admin and customer email happen to be the same address. Customer messages omit admin-only contact summaries and admin links. Full card numbers, CVVs and UPI IDs are never included.
-
-Pending email jobs created after this feature was installed are processed when SMTP becomes configured, including after a restart. Older bookings without queue records show **Not queued (older booking)**. Sent messages cannot be resent with the failed-email retry button. Automatic delivery is at-least-once after process recovery; an SMTP-accepted message may be duplicated if the process stops before recording the success. A stable Message-ID is reused, but recipient providers control deduplication. The single-process worker does not provide bounce webhooks or inbox-delivery tracking.
-
-SMTP diagnostic codes remain in the private server database; they are not sent to the customer or admin browser. Secrets and raw provider responses are not logged. Successful `Sent` status does not guarantee inbox placement. Check spam folders and account sending limits. App Passwords usually require Google 2-Step Verification and may be restricted by your account's administrator. No actual Gmail email was sent during automated tests: SMTP integration tests bind a local test server and use test-only recipients.
-
-
-## Customer-account acceptance checks
-
-1. Register customer A with a 12+ character password. Sign out and sign back in. Credentials must not appear in browser local storage or API responses.
-2. Book seats while signed in, then open `/account`. Check booking reference/status, boat/pier, date/time, seats, payment method/status/amount/reference, email status and downloadable pass.
-3. Register customer B in another browser. Its history must not include A's reservations. A request for A's booking ID using B's session must return 404, even if a body/query parameter supplies A's user ID or email.
-4. Sign out. History and pass dialogs must disappear. Session-protected endpoints must return 401. Reusing an expired/revoked cookie must fail. On a shared browser, switching accounts must not expose the previous account's in-memory history.
-5. In Account security, supply the current password and change to a new unique password. All prior sessions must stop working; the old password must fail and the new one must sign in.
-6. Check that registering an email matching a historical guest reservation does not claim that reservation. Legacy claims need a separate verified recovery process, which is not implemented here.
-
-Customer and admin credentials use different tables/cookies. Customer sessions cannot access admin endpoints and admin sessions do not impersonate customers. New bookings require customer login and store the authenticated owner in a database column with a foreign key. Customer contact/payment data stays on the backend and in temporary authenticated UI state; only an explicit file download produces an offline copy. Old browser caches from earlier versions may still exist until the user explicitly clears them, and are never treated as ownership evidence.
-
-Sessions are eight hours with HttpOnly, SameSite=Strict cookies; use HTTPS with `NODE_ENV=production` for Secure cookies. Login/registration/password changes have per-IP and per-account throttling; reverse-proxy deployments currently use the server-observed connection IP. Passwords use salted scrypt; database contact details are not encrypted at rest. Email verification at registration, MFA, account deletion and profile editing are separate future features. No automatic guest-email matching, default customer password or browser-local admin/user role flag is used.
-
-
-## Forgotten-password recovery
-
-1. Keep Gmail SMTP enabled and configured. Set `PUBLIC_ORIGIN=http://localhost:3000` for local Vite development, or your HTTPS production origin for deployment. When using `npm start` directly on port 3001, use `http://localhost:3001` locally. Restart the server after changing `.env`.
-2. On sign-in, select **Forgot password?**, enter your registered email and submit. Existing and nonexistent accounts must receive the same browser response. Only the registered inbox receives a link, if delivery is configured.
-3. Follow the email link within 15 minutes. Confirm that the `#token=...` fragment disappears from the address bar when the page loads. Enter a new unique 12+ character password twice. The current password is not needed.
-4. Sign in with the new password. The old password and every previously issued session must fail. Reusing the reset link must fail; requesting a second link before resetting does not invalidate the first, but successfully using either invalidates all outstanding links.
-5. Test an expired or modified token: the app must show an invalid/expired message and offer a fresh request. No password or session changes should occur. Changing a password through Account security must invalidate older reset links as well.
-
-Reset delivery uses the same Gmail SMTP transport but does not persist email bodies containing bearer tokens. Token hashes and expiry/used state persist in SQLite. If delivery fails or the server stops before sending, request another link; the password is unchanged until a reset succeeds. Request limits apply even to nonexistent addresses. The raw token never appears in server responses or stored booking metadata. Do not log request bodies or share/reset links. For local development, origin/port must match the app you want the email to open. Production reset links require HTTPS. Live Gmail delivery still needs your configured account credentials and has not been verified with a real Gmail account in automated tests.
-
-
-## Readability and client-information checks
-
-Use a desktop and a 320px-wide mobile viewport, then increase browser zoom/text size. Review the larger labels, input values, prices, seat numbers, account tables and wrapping pass exports. The mobile fleet should use a single column; tables may scroll horizontally rather than shrinking their text. Graphical browser checks were unavailable in the implementation workspace.
-
-Customer/admin responses are now explicit projections. Check authenticated account and admin requests in developer tools: authorized profile/booking/payment summaries must remain usable, while hashes, raw gateway fields, SMTP configuration/routing and diagnostic codes must be absent. QR data should contain only booking/trip/seat identity. No setup commands, `.env` values or SMTP credentials should appear in UI messages. Operational settings remain in the server environment and documentation, and unexpected service failures use general messages.
-
-## Hindi/English and Razorpay
-
-Choose English or हिन्दी in the app header. `.env` supports `PAYMENT_MODE=demo`
-(local simulation), `razorpay` (hosted INR checkout) or `disabled` (browse only).
-Set Razorpay keys and webhook secret only on the backend. Production blocks demo
-payments. See [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) for provider setup,
-HTTPS hosting, required real inventory/policies, manual refund handling and backups.
+See [SHARED_DATA.md](SHARED_DATA.md) for SQLite migration and shared online data,
+[ARCHITECTURE.md](ARCHITECTURE.md) for service boundaries, and
+[COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) for live deployment. Graphical browser,
+printing, QR scanning and real payment/email delivery still need manual acceptance
+on the target environment.

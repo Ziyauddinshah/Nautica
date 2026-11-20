@@ -1,11 +1,15 @@
-import {openStore} from '../server/store.js';
-import {databasePath} from '../server/database-path.js';
-const filename=databasePath();
-if(filename===':memory:')throw new Error('Initialization requires a persistent database file.');
-const db=openStore(filename,{mustExist:false});
+import {randomUUID} from 'node:crypto';
+import {connectMongo,createMongoIndexes} from '../server/repositories/mongo-connection.js';
+const connection=await connectMongo(process.env,{initialize:true});
 try{
- console.log('Database initialized; existing records were preserved.');
- console.log('Private database file:',filename);
- console.log('Database identity:',db.prepare('SELECT instance_id FROM database_metadata WHERE id=1').get().instance_id);
- console.log('Use this one backend for every device. A new installation does not import data automatically.');
-}finally{db.close();}
+ const {db}=connection,metadata=await db.collection('metadata').findOne({_id:'schema'});
+ if(metadata&&(!['initializing','ready'].includes(metadata.state)||metadata.version!==1))throw new Error('Migration is incomplete or schema version is incompatible. Do not initialize over existing data.');
+ if(metadata?.state!=='ready'){
+  for(const name of ['users','admins','bookings','payments','inventory','outbox'])if(await db.collection(name).countDocuments({}, {limit:1}))throw new Error('Existing records found. Use a validated migration; initialization does not adopt unknown data.');
+  await db.collection('metadata').updateOne({_id:'schema'},{$setOnInsert:{instanceId:randomUUID(),version:1,state:'initializing',createdAt:new Date().toISOString()}},{upsert:true});
+ }
+ await createMongoIndexes(db);
+ const completed=await db.collection('metadata').updateOne({_id:'schema',version:1,state:{$in:['initializing','ready']}},{$set:{state:'ready'}});
+ if(!completed.matchedCount)throw new Error('Schema state changed during initialization. Initialization stopped.');
+ console.log('MongoDB schema and indexes ready. No existing records were removed.');
+}finally{await connection.close();}

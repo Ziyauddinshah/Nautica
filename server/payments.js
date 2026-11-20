@@ -1,11 +1,8 @@
 import {createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
 import {ApiError,availability,validateBooking,createBooking} from './store.js';
 import {amounts,seatLayout} from '../src/domain/booking.js';
-export function validSignature(value,message,secret){
- if(typeof value!=='string'||!/^\w{64}$/.test(value)||!secret)return false;
- const expected=createHmac('sha256',secret).update(message).digest();
- const supplied=Buffer.from(value,'hex');return supplied.length===expected.length&&timingSafeEqual(supplied,expected);
-}
+import {validSignature} from './domain/signature.js';
+export {validSignature} from './domain/signature.js';
 export function createPayments(db,{keyId,keySecret,webhookSecret,transport=fetch,mode='seats'}={}){
  const enabled=Boolean(keyId&&keySecret&&webhookSecret);
  async function gateway(path,body){

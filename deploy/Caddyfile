@@ -1,3 +1,18 @@
 {$NAUTICA_DOMAIN} {
-    reverse_proxy app:3001
+    reverse_proxy {
+        dynamic a {
+            name app
+            port 3001
+            refresh 5s
+            resolvers 127.0.0.11
+        }
+        header_up X-Nautica-Proxy-Token {$NAUTICA_PROXY_TOKEN}
+        lb_policy round_robin
+        fail_duration 10s
+        unhealthy_status 5xx
+        lb_try_duration 2s
+        lb_retry_match {
+            method GET HEAD
+        }
+    }
 }
