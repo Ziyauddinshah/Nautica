@@ -4,7 +4,7 @@ import { request } from '../lib/api.js';
 export function clearLegacyPassCache(){try{localStorage.removeItem('nautica.web.passes');return true;}catch{return false;}}
 export default function useCustomerSession(){
  const [user,setUser]=useState(undefined),channel=useRef(null),sequence=useRef(0);
- const refresh=useCallback(async()=>{const current=++sequence.current;try{const result=await request('/api/user/session');if(current===sequence.current)setUser(result.user);}catch{if(current===sequence.current)setUser(null);}},[]);
+ const refresh=useCallback(async()=>{const current=++sequence.current;try{const result=await request('/api/user/session');if(current===sequence.current)setUser(result.user);}catch(error){if(current===sequence.current){if(error.status===401)setUser(null);else setUser(previous=>previous===undefined?null:previous);}}},[]);
  useEffect(()=>{
   refresh();
   if(typeof BroadcastChannel!=='undefined'){channel.current=new BroadcastChannel('nautica-user-session');channel.current.onmessage=()=>refresh();}

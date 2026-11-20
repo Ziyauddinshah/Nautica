@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    image: nautica:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      NAUTICA_DB: /app/data/nautica.sqlite
+      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
+      PUBLIC_ORIGIN: https://${NAUTICA_DOMAIN:?Set NAUTICA_DOMAIN to your real hostname}
+    volumes:
+      - nautica-data:/app/data
+    networks:
+      - nautica
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      NAUTICA_DOMAIN: ${NAUTICA_DOMAIN:?Set NAUTICA_DOMAIN to your real hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - nautica
+networks:
+  nautica:
+volumes:
+  nautica-data:
+    external: true
+    name: nautica-data
+  caddy-data:
+  caddy-config:

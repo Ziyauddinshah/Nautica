@@ -1,18 +1,23 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, chmodSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, chmodSync, existsSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import {databasePath,projectRoot} from './database-path.js';
 import * as N from '../src/domain/booking.js';
 
 export class ApiError extends Error { constructor(status, message, details = {}) { super(message); this.status = status; this.details = details; } }
 export const digest = value => createHash('sha256').update(value).digest('hex');
 const bankNames = ['SBI','HDFC Bank','ICICI Bank','Axis Bank','Bank of Baroda','Canara Bank','Kotak Mahindra','Punjab National Bank','Union Bank'];
-export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nautica.sqlite')) {
-  if(filename!==':memory:'&&(resolve(filename)===resolve('dist')||resolve(filename).startsWith(resolve('dist')+'/')))throw new Error('Database must be outside dist.');
+export function openStore(filename = databasePath(), {mustExist=process.env.NODE_ENV==='production'} = {}) {
+  if(filename!==':memory:')filename=resolve(projectRoot,filename);
+  const publicDirectory=resolve(projectRoot,'dist');
+  if(filename!==':memory:'&&(filename===publicDirectory||filename.startsWith(publicDirectory+sep)))throw new Error('Database must be outside dist.');
+  if(mustExist&&(filename===':memory:'||!existsSync(filename)))throw new Error('Persistent database is missing. Restore the database or explicitly initialize it with npm run db:init. Startup stopped to prevent an empty replacement.');
   if (filename !== ':memory:') mkdirSync(dirname(filename), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(filename);
+  if(mustExist){try{for(const table of ['users','bookings'])if(!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))throw new Error('Database is not initialized. Restore your existing database or explicitly run npm run db:init.');}catch(error){db.close();throw error;}}
   if (filename !== ':memory:') chmodSync(filename, 0o600);
-  db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+  db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE COLLATE NOCASE,name TEXT NOT NULL,phone TEXT NOT NULL,salt TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL, request_hash TEXT NOT NULL, boat_id TEXT NOT NULL, date TEXT NOT NULL, slot TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL,user_id TEXT REFERENCES users(id));
     CREATE TABLE IF NOT EXISTS seats(boat_id TEXT, date TEXT, slot TEXT, seat TEXT, booking_id TEXT REFERENCES bookings(id), PRIMARY KEY(boat_id,date,slot,seat));
@@ -24,6 +29,8 @@ export function openStore(filename = process.env.NAUTICA_DB || resolve('data/nau
   if(!db.prepare('PRAGMA table_info(bookings)').all().some(column=>column.name==='user_id'))db.exec('ALTER TABLE bookings ADD COLUMN user_id TEXT REFERENCES users(id)');
   db.exec(`CREATE TABLE IF NOT EXISTS payment_attempts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),request_key TEXT UNIQUE NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,amount INTEGER NOT NULL,order_id TEXT UNIQUE,payment_id TEXT UNIQUE,status TEXT NOT NULL,expires INTEGER NOT NULL,booking_id TEXT REFERENCES bookings(id));
     CREATE TABLE IF NOT EXISTS seat_holds(boat_id TEXT,date TEXT,slot TEXT,seat TEXT,attempt_id TEXT REFERENCES payment_attempts(id),expires INTEGER NOT NULL,PRIMARY KEY(boat_id,date,slot,seat));`);
+  db.exec(`CREATE TABLE IF NOT EXISTS database_metadata(id INTEGER PRIMARY KEY CHECK(id=1),instance_id TEXT NOT NULL,created_at TEXT NOT NULL);`);
+  db.prepare('INSERT OR IGNORE INTO database_metadata VALUES(1,?,?)').run(randomUUID(),new Date().toISOString());
   return db;
 }
 export function tripInfo(input) {

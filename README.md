@@ -153,3 +153,17 @@ Read [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) before enabling live bookings.
 It covers credentials, HTTPS hosting, the Dockerfile, backups, manual refunds and
 remaining business requirements. Sample inventory and policies must be replaced
 and live payment/email delivery validated before commercial launch.
+
+### Same data on multiple computers
+
+Use **one shared backend URL** on every device. Each separate `npm run dev`
+installation otherwise uses its own private SQLite file; GitHub does not sync
+customer data. For trusted LAN testing run `npm run share` on the original
+computer and open its printed URL on the other devices. For access from anywhere,
+use one HTTPS server and persistent disk/volume.
+
+[Shared data and migration guide](SHARED_DATA.md) includes the Compose setup,
+`db:status`, safe backup/import commands and startup safeguards against an empty
+replacement database. Production now requires an absolute `NAUTICA_DB` and an
+existing initialized database; initialize a new business explicitly with
+`npm run db:init`, or restore your existing data instead.

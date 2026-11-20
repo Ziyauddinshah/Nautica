@@ -24,7 +24,7 @@ test('admin login protects the manifest, shows complete booking details, and log
  fireEvent.click(screen.getByRole('button',{name:'View booking NTC-ADMIN-TEST'}));
  await screen.findByRole('button',{name:'Seat 01, booked by Admin Visible Guest'});expect(screen.getByText('DEMO-TEST-REFERENCE')).toBeTruthy();expect(screen.getAllByText('+919876543210').length).toBeGreaterThan(0);
  expect(screen.getAllByText('Customer: failed').length).toBeGreaterThan(0);
- fireEvent.click(screen.getByRole('button',{name:'Retry failed emails'}));await screen.findByText('Customer: pending');expect(record.notifications[1].status).toBe('sent');
+ fireEvent.click(screen.getByRole('button',{name:'Retry failed emails'}));await screen.findAllByText('Customer: pending');expect(record.notifications[1].status).toBe('sent');
  expect(localStorage.length).toBe(0);
  fireEvent.click(screen.getByRole('button',{name:'Sign out'}));await screen.findByRole('button',{name:'Sign in as admin'});expect(screen.queryByText(/private@example.com/)).toBeNull();expect(authenticated).toBe(false);
 });

@@ -11,5 +11,5 @@ const port=Number(process.env.PORT||3001),host=process.env.HOST||'127.0.0.1';
 const emailService=createEmailService(db);
 const payments=createPayments(db,{mode,keyId:process.env.RAZORPAY_KEY_ID,keySecret:process.env.RAZORPAY_KEY_SECRET,webhookSecret:process.env.RAZORPAY_WEBHOOK_SECRET});
 const server=createApp(db,{mode,emailService,...config,payments,trustedProxyIPs:(process.env.TRUSTED_PROXY_IPS||'').split(',').map(value=>value.trim()).filter(Boolean)});
-server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);emailService.start();});
+server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);if(!config.production)console.log('Local database: other installations do not sync automatically. All devices must use this server’s URL.');emailService.start();});
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await emailService.stop();db.close();process.exit(0);}));

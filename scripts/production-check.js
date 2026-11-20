@@ -1,7 +1,10 @@
+import {openStore} from '../server/store.js';
 import {productionConfig} from '../server/config.js';
 import {emailConfig} from '../server/email.js';
 try{
  const config=productionConfig({...process.env,NODE_ENV:'production'});
+ const db=openStore(undefined,{mustExist:true});db.close();
+ console.log('Persistent database exists. Back up this database before host migration.');
  console.log('HTTPS origin and production payment configuration: valid.');
  console.log(config.paymentMode==='razorpay'?'Razorpay credentials present (not verified with provider).':'Online payments disabled.');
  const email=emailConfig({...process.env,NODE_ENV:'production'});

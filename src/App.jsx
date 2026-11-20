@@ -1,3 +1,4 @@
+import useBackgroundRefresh from './hooks/useBackgroundRefresh.js';
 import LanguageSwitcher, { useI18n } from "./i18n/I18nProvider.jsx";
 import { useEffect, useRef, useState } from 'react';
 import * as N from './domain/booking.js';
@@ -38,6 +39,7 @@ export default function App({
     user,
     setUser
   } = useCustomerSession();
+  const backgroundRefresh=useBackgroundRefresh(Boolean(user));
   const passes = history.owner === user?.id ? history.items : [];
   function setPasses(next) {
     setHistory(previous => ({
@@ -77,7 +79,7 @@ export default function App({
     const prior = previousUser.current;
     previousUser.current = user?.id || null;
     if (prior && prior !== user?.id) setFlow(null);
-    setPasses([]);
+    if(prior!== (user?.id||null))setPasses([]);
     if (!user) return;
     const controller = new AbortController();
     request('/api/user/bookings', {
@@ -90,7 +92,7 @@ export default function App({
       }
     });
     return () => controller.abort();
-  }, [user?.id]);
+  }, [user?.id,backgroundRefresh]);
   function beginAuth(action, opener) {
     pendingAction.current = action;
     openerRef.current = opener;

@@ -19,7 +19,11 @@
     "test:server": "node --test server/*.test.js",
     "email:verify": "node --env-file-if-exists=.env scripts/email-verify.js",
     "production:check": "node --env-file-if-exists=.env scripts/production-check.js",
-    "db:backup": "node --env-file-if-exists=.env scripts/backup.js"
+    "db:backup": "node --env-file-if-exists=.env scripts/backup.js",
+    "db:init": "node --env-file-if-exists=.env scripts/db-init.js",
+    "db:status": "node --env-file-if-exists=.env scripts/db-status.js",
+    "share": "npm run build && node --env-file-if-exists=.env scripts/share.js",
+    "db:restore": "node --env-file-if-exists=.env scripts/db-restore.js"
   },
   "dependencies": {
     "@fontsource/noto-sans-devanagari": "^5.3.0",

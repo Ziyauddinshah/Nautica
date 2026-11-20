@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {projectRoot} from './database-path.js';
 import {isIP} from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
@@ -88,7 +89,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         throw new ApiError(404,'Endpoint not found.');
       }
       if(!['GET','HEAD'].includes(req.method))throw new ApiError(405,'Method not allowed.');
-      const base=resolve('dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
+      const base=resolve(projectRoot,'dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
       if(path!==base&&!path.startsWith(base+sep))throw new ApiError(404,'Not found.');
       const filename=['/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
       let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Page not found.');}

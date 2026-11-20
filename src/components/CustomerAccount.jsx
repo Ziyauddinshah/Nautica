@@ -1,3 +1,4 @@
+import useBackgroundRefresh from '../hooks/useBackgroundRefresh.js';
 import LanguageSwitcher, { useI18n } from "../i18n/I18nProvider.jsx";
 import { useEffect, useState } from 'react';
 import { clearLegacyPassCache } from '../hooks/useCustomerSession.js';
@@ -28,6 +29,7 @@ export default function CustomerAccount({
     t,
     locale
   } = useI18n();
+  const backgroundRefresh=useBackgroundRefresh(Boolean(user));
   const [data, setData] = useState({
       bookings: [],
       total: 0
@@ -45,12 +47,8 @@ export default function CustomerAccount({
       confirmation: ''
     }),
     [busy, setBusy] = useState(false);
+  useEffect(()=>{setData({bookings:[],total:0});setSelected(null);},[user?.id,offset]);
   useEffect(() => {
-    setData({
-      bookings: [],
-      total: 0
-    });
-    setSelected(null);
     if (!user) return;
     const controller = new AbortController();
     setLoading(true);
@@ -70,7 +68,7 @@ export default function CustomerAccount({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [user?.id, offset, refresh]);
+  }, [user?.id, offset, refresh, backgroundRefresh]);
   async function logout() {
     setBusy(true);
     try {

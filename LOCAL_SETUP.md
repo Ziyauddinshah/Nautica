@@ -1,5 +1,13 @@
 # Local setup and acceptance checks
 
+## Same data across devices
+
+See [SHARED_DATA.md](SHARED_DATA.md). Running the repository separately on another
+computer creates a separate database; it does not erase or download the original.
+Use `npm run share` on one computer for trusted LAN testing, or one HTTPS hosted
+backend for access from anywhere. Run `npm run db:status` on the original machine
+and migrate its database before changing hosts.
+
 ## First start
 
 1. Install Node.js 22.12+ (Node 24 LTS recommended).
@@ -28,7 +36,7 @@ Base fares remain flat group booking fares. Add-ons and the 5% fee are recalcula
 4. Open the map before another browser confirms; refresh it or wait 10 seconds. If two users submit the same seats simultaneously, one confirmation succeeds and the other gets a conflict and returns to the refreshed map.
 5. Restart the server. The booked seats must remain blocked.
 
-Selections are not temporary holds. The authoritative check happens at final submission. For a network interruption, retry the same checkout details; idempotency prevents the same request from creating a duplicate. If a confirmation cannot be recovered, the administrator can locate it using the passenger/contact details.
+In local demo mode selections are not temporary holds; Razorpay checkout creates 15-minute holds. The authoritative check happens at final submission. For a network interruption, retry the same checkout details; idempotency prevents the same request from creating a duplicate. If a confirmation cannot be recovered, the administrator can locate it using the passenger/contact details.
 
 ## Check the admin panel
 
@@ -38,11 +46,11 @@ An unauthenticated visitor must not receive passenger or payment records from `/
 
 ## Storage and hosting
 
-The authoritative database is `data/nautica.sqlite`, including its WAL/SHM files when active. Do not delete it to clear browser storage. Stop the server before copying files directly, or use an appropriate SQLite backup process. The database is not encrypted. Keep it private and outside `dist/`.
+The authoritative local database is `data/nautica.sqlite` relative to the application directory, including its WAL/SHM files when active. Do not delete it to clear browser storage. Stop the server before copying files directly, or use an appropriate SQLite backup process. The database is not encrypted. Keep it private and outside `dist/`.
 
 Customer history is now server-based and limited to the signed-in owner. Old guest/server bookings remain in admin records but are not auto-assigned to registrations by email. Older browser pass caches are ignored, not deleted automatically. Downloaded files remain on your device; clear legacy browser copies explicitly under Account security when appropriate. New history follows the signed-in account across devices connected to the same backend.
 
-For a built app, run `npm run build` then `npm start` and open http://localhost:3001. For deployment, use the Node server with a persistent database volume, an HTTPS reverse proxy, `PUBLIC_ORIGIN`, and `NODE_ENV=production`; Secure cookies require HTTPS. Static-only hosting cannot provide shared availability or admin access. A separate database/service design is needed for multiple independent server replicas.
+For a built app, run `npm run build` then `npm start` and open http://localhost:3001. For deployment, use the Node server with an absolute `NAUTICA_DB` on persistent storage, an existing initialized/restored database, an HTTPS reverse proxy, `PUBLIC_ORIGIN`, and `NODE_ENV=production`; Secure cookies require HTTPS. Static-only hosting cannot provide shared availability or admin access. A separate database/service design is needed for multiple independent server replicas.
 
 ## Verification
 

@@ -1,3 +1,4 @@
+import useBackgroundRefresh from '../hooks/useBackgroundRefresh.js';
 import LanguageSwitcher, { useI18n } from "../i18n/I18nProvider.jsx";
 import { useEffect, useState } from 'react';
 import { request } from '../lib/api.js';
@@ -10,6 +11,7 @@ export default function AdminDashboard() {
   const [session, setSession] = useState(undefined),
     [username, setUsername] = useState(''),
     [password, setPassword] = useState('');
+  const backgroundRefresh=useBackgroundRefresh(Boolean(session));
   const [filters, setFilters] = useState({
       q: '',
       boatId: '',
@@ -41,23 +43,19 @@ export default function AdminDashboard() {
       active = false;
     };
   }, []);
+  useEffect(()=>{setData({bookings:[],total:0});setSelected(null);},[session,filters,offset]);
   useEffect(() => {
     if (!session) return;
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    setData({
-      bookings: [],
-      total: 0
-    });
-    setSelected(null);
     const query = new URLSearchParams({
       ...filters,
       offset
     });
     request('/api/admin/bookings?' + query, {
       signal: controller.signal
-    }).then(setData).catch(error => {
+    }).then(result=>{if(controller.signal.aborted)return;setData(result);setSelected(current=>current?(result.bookings.find(record=>record.id===current.id)||current):null);}).catch(error => {
       if (error.name !== 'AbortError') {
         setError(error.message);
         if (error.status === 401) setSession(null);
@@ -66,25 +64,25 @@ export default function AdminDashboard() {
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [session, filters, offset, refresh]);
+  }, [session, filters, offset, refresh, backgroundRefresh]);
+  useEffect(()=>{setManifest([]);},[selected?.boat.id,selected?.trip.date,selected?.trip.slot]);
   useEffect(() => {
     if (!selected) {
       setManifest([]);
       return;
     }
     const controller = new AbortController();
-    setManifest([]);
     request('/api/admin/bookings?' + new URLSearchParams({
       boatId: selected.boat.id,
       date: selected.trip.date,
       slot: selected.trip.slot
     }), {
       signal: controller.signal
-    }).then(data => setManifest(data.bookings)).catch(error => {
+    }).then(data => {if(controller.signal.aborted)return;setManifest(data.bookings);setSelected(current=>current?.id===selected.id?(data.bookings.find(record=>record.id===current.id)||current):current);}).catch(error => {
       if (error.name !== 'AbortError') setError(error.message);
     });
     return () => controller.abort();
-  }, [selected]);
+  }, [selected?.id,selected?.boat.id,selected?.trip.date,selected?.trip.slot,backgroundRefresh,refresh]);
   async function signIn(event) {
     event.preventDefault();
     setBusy(true);

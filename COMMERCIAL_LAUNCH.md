@@ -6,6 +6,15 @@ foundation, not an already deployed or approved commercial booking service.
 Hosting/domain are undecided. Merchant credentials have not been supplied and no
 live charge, live email or provider webhook has been tested in this workspace.
 
+## Shared, persistent customer data
+
+Follow [SHARED_DATA.md](SHARED_DATA.md) before changing computers or hosts. All
+devices must use one backend URL. `compose.yaml` supplies a single-server HTTPS
+setup with a fixed external database volume. Production requires an absolute
+`NAUTICA_DB` and refuses missing/uninitialized storage. Restore existing data or
+explicitly run `db:init` for a new business; `db:status` helps compare identities
+and counts. GitHub does not store or synchronize private databases.
+
 ## Local development
 
 Use Node 24, `npm ci`, copy `.env.example` to `.env`, then `npm run dev`.
@@ -68,7 +77,7 @@ server-side and outside `dist`. Never prefix secrets with `VITE_`.
 A non-root Node 24 Dockerfile is included. Build with `docker build -t nautica .`.
 Provide environment variables at runtime, mount `/app/data` on a private persistent
 volume writable by UID 1000, and place HTTPS in front of the container. Never copy
-`.env` into an image. Set PUBLIC_ORIGIN before startup; the default production
+`.env` into an image. Initialize a new persistent database explicitly with `node scripts/db-init.js`, or restore the existing one with `node scripts/db-restore.js /private/backup.sqlite`, before the first application startup. Set PUBLIC_ORIGIN before startup; the default production
 payment mode is disabled. The Docker build was attempted here but npm inside the build rejected this
 workspace’s TLS certificate chain (`SELF_SIGNED_CERT_IN_CHAIN`). TLS verification
 was kept enabled. Validate the image on your chosen host or configure your
