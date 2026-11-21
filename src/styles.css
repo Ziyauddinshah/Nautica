@@ -516,3 +516,6 @@ button,.quiet,.outline,.primary,.chip,.tab,.bank,.back-link{min-height:44px}
 }
 
 :lang(hi){font-family:"Noto Sans Devanagari",sans-serif;line-height:1.7}.language-switch select{font:inherit;min-height:44px;padding:6px 10px;border:1px solid #b9c5cf;border-radius:8px;background:white;color:#10283c}.language-switch{display:inline-flex;margin:8px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+.account-main>.tabs{flex-wrap:wrap;gap:8px}.account-main>.tabs .tab{min-height:48px;white-space:normal;flex:1 1 150px}.account-main .admin-table td small{display:block;margin-top:6px;overflow-wrap:anywhere}
+.account-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}.account-summary button{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:start;padding:18px}.account-summary strong{font-size:1.5rem}

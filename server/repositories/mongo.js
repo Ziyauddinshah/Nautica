@@ -1,3 +1,4 @@
+import {historyView,journeyEndExpression,paymentRow} from '../domain/history.js';
 import {setTimeout as delay} from 'node:timers/promises';
 import {randomBytes,randomUUID,scryptSync,timingSafeEqual} from 'node:crypto';
 import {ApiError,digest} from '../errors.js';
@@ -168,15 +169,33 @@ export class MongoRepository{
    return bookingView(record,{notifications:await this.notificationsFor(id,session)});
   });
  }
+ async bookingHistory(userId,query,session){
+  const view=historyView(query),offset=offsetOf(query),now=new Date();
+  const active={$and:[{$gt:['$__ends',now]},{$eq:['$status','confirmed']}]};
+  const match=view==='upcoming'?{$expr:active}:view==='past'?{$expr:{$not:[active]}}:null;
+  const sort=view==='upcoming'?{__ends:1,_id:1}:view==='past'?{__ends:-1,_id:-1}:{createdAt:-1,_id:-1};
+  const [result]=await this.c('bookings').aggregate([{$match:{userId}},{$set:{__ends:journeyEndExpression()}},{$facet:{counts:[{$group:{_id:null,all:{$sum:1},upcoming:{$sum:{$cond:[active,1,0]}}}}],records:[...(match?[{$match:match}]:[]),{$sort:sort},{$skip:offset},{$limit:50}]}}],{session}).toArray();
+  const counts={all:result.counts[0]?.all||0,upcoming:result.counts[0]?.upcoming||0};counts.past=counts.all-counts.upcoming;
+  return {now,records:result.records,counts,total:view==='all'?counts.all:counts[view],offset};
+ }
  async userBookings(userId,query={}){
   return this.transaction(async session=>{
-   const offset=offsetOf(query),filter={userId},total=await this.c('bookings').countDocuments(filter,{session}),upcoming=await this.c('bookings').countDocuments({...filter,'trip.date':{$gte:localDate()}},{session});
-   const records=await this.c('bookings').find(filter,{session}).sort({createdAt:-1,_id:-1}).skip(offset).limit(50).toArray();
-   const bookings=[];for(const record of records)bookings.push(bookingView(record,{notifications:await this.notificationsFor(record.id,session)}));
-   const attempts=await this.c('payments').find({userId,status:{$ne:'paid'},$or:[{expires:{$gt:Date.now()}},{status:'refund_required'}]},{session}).sort({expires:-1}).limit(50).toArray();
+   const history=await this.bookingHistory(userId,query,session),bookings=[];
+   const jobs=history.records.length?await this.c('outbox').find({bookingId:{$in:history.records.map(record=>record.id)}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,sentAt:1}}).toArray():[];
+   for(const record of history.records){const view=bookingView(record,{notifications:jobs.filter(job=>job.bookingId===record.id)});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
+   const attemptCount=await this.c('payments').countDocuments({userId,status:{$ne:'paid'}},{session});
+   const attempts=await this.c('payments').find({userId,status:{$ne:'paid'},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1}}).sort({expires:-1}).limit(50).toArray();
    const payments=attempts.map(row=>({id:row._id,amount:row.amount,currency:'INR',status:row.status==='refund_required'?'refund_required':'pending',reference:row.paymentId}));
-   return {bookings,payments,total,upcoming,offset,limit:50};
+   return {bookings,payments,counts:history.counts,paymentTotal:history.counts.all+attemptCount,total:history.total,upcoming:history.counts.upcoming,offset:history.offset,limit:50};
   });
+ }
+ async userPayments(userId,query={}){
+  const offset=offsetOf(query),now=new Date(),active={$and:[{$gt:['$__ends',now]},{$eq:['$record.status','confirmed']}]};
+  const pipeline=[{$match:{userId}},{$set:{__ends:journeyEndExpression()}},{$project:{source:{$literal:'booking'},record:'$$ROOT',__ends:1,sortDate:{$ifNull:['$payment.paidAt','$createdAt']}}},{$unionWith:{coll:'payments',pipeline:[{$match:{userId,status:{$ne:'paid'}}},{$project:{source:{$literal:'attempt'},record:'$$ROOT',sortDate:{$dateToString:{date:{$toDate:{$subtract:['$expires',900000]}},format:'%Y-%m-%dT%H:%M:%S.%LZ'}}}}]}},{$facet:{count:[{$count:'total'}],counts:[{$match:{source:'booking'}},{$group:{_id:null,all:{$sum:1},upcoming:{$sum:{$cond:[active,1,0]}}}}],rows:[{$sort:{sortDate:-1,_id:-1}},{$skip:offset},{$limit:50}]}}];
+  // Snapshot reads outside a transaction allow unionWith while keeping one read timestamp.
+  const [result]=await this.c('bookings').aggregate(pipeline,{readConcern:{level:'snapshot'}}).toArray();
+  const counts={all:result.counts[0]?.all||0,upcoming:result.counts[0]?.upcoming||0};counts.past=counts.all-counts.upcoming;
+  return {payments:result.rows.map(row=>paymentRow(row.record,row.source)),counts,total:result.count[0]?.total||0,paymentTotal:result.count[0]?.total||0,offset,limit:50};
  }
  async adminBookings(query={}){
   const filter={};for(const [key,column]of [['boatId','boat.id'],['date','trip.date'],['slot','trip.slot']])if(query[key])filter[column]=String(query[key]);

@@ -81,7 +81,7 @@ test('distributed checkout holds seats; duplicate callbacks and webhooks confirm
  await assert.rejects(pb.verify({...verify,signature:'0'.repeat(64)},user),{status:400});setCaptured(false);await assert.rejects(pa.verify(verify,user),{status:409});assert.equal(await a.c('bookings').countDocuments({}),0);setCaptured(true);
  const raw=JSON.stringify({event:'payment.captured',payload:{payment:{entity:{id:'pay_1',order_id:order.orderId}}}});
  const results=await Promise.all([pa.verify(verify,user),pb.verify(verify,user),pb.webhook(raw,sign(raw,'test-webhook'))]);
- assert.equal(results[0].id,results[1].id);assert.equal(results[0].paymentStatus,'paid');setCaptured(false);assert.equal((await pb.verify(verify,user)).id,results[0].id);assert.equal(await a.c('bookings').countDocuments({}),1);assert.equal(await a.c('outbox').countDocuments({}),2);
+ assert.equal(results[0].id,results[1].id);assert.equal(results[0].paymentStatus,'paid');const ledger=await b.userPayments(user.id,{});assert.equal(ledger.total,1);assert.equal(ledger.payments[0].status,'paid');setCaptured(false);assert.equal((await pb.verify(verify,user)).id,results[0].id);assert.equal(await a.c('bookings').countDocuments({}),1);assert.equal(await a.c('outbox').countDocuments({}),2);
 });
 test('a late captured payment cannot steal seats already reserved by another booking',async()=>{
  const {a,b}=await fixture(),user=(await a.registerUser(account())).user,{gateway}=gatewayFixture(),pa=createPaymentService(new MongoPaymentStore(a),gateway),pb=createPaymentService(new MongoPaymentStore(b),gateway),input=booking(user),order=await pa.order(input,user);
@@ -158,4 +158,15 @@ test('an obsolete email worker cannot acknowledge or fail a newly claimed job',a
  const first=new MongoOutboxStore(a,{now:()=>1000}),second=new MongoOutboxStore(b,{now:()=>122000}),old=await first.claim(),fresh=await second.claim();
  assert.equal(old._id,fresh._id);assert.notEqual(old.leaseToken,fresh.leaseToken);
  assert.equal((await first.succeed(old)).matchedCount,0);assert.equal((await first.fail(old)).matchedCount,0);assert.equal((await second.succeed(fresh)).matchedCount,1);
+});
+test('history filters and payment pagination operate on all owner records, including migrated payments and unbooked attempts',async()=>{
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user,stranger=(await a.registerUser(account())).user;
+ const pass=await a.createBooking(booking(user),'seats',user),original=await a.c('bookings').findOne({_id:pass.id});
+ const old=[];for(let index=0;index<55;index++){const id='NTC-HISTORY-'+index;old.push({...original,_id:id,id,requestKey:randomUUID(),trip:{...original.trip,date:'2020-01-01'},createdAt:new Date(Date.UTC(2020,0,1,index)).toISOString()});}
+ await a.c('bookings').insertMany(old);
+ await a.c('payments').insertMany([{_id:randomUUID(),userId:user.id,requestKey:randomUUID(),payload:booking(user),amount:126000,status:'refund_required',expires:Date.now()+900000,paymentId:'pay_refund'},{_id:randomUUID(),userId:stranger.id,requestKey:randomUUID(),payload:booking(stranger),amount:999999,status:'created',expires:Date.now()+900000}]);
+ const upcoming=await b.userBookings(user.id,{view:'upcoming'});assert.equal(upcoming.total,1);assert.equal(upcoming.payments[0].reference,'pay_refund');assert.equal(upcoming.bookings[0].id,pass.id);assert.deepEqual(upcoming.counts,{all:56,upcoming:1,past:55});
+ const previous=await b.userBookings(user.id,{view:'past',offset:50});assert.equal(previous.total,55);assert.equal(previous.bookings.length,5);assert.ok(previous.bookings.every(record=>record.trip.date==='2020-01-01'));
+ const payments=await b.userPayments(user.id,{});assert.equal(payments.total,57);assert.equal(payments.payments.length,50);assert.equal(payments.payments.find(row=>row.reference==='pay_refund').status,'refund_required');assert.ok(payments.payments.some(row=>row.status==='demo_paid'));assert.ok(payments.payments.every(row=>row.amount!==999999));
+ const secondPage=await b.userPayments(user.id,{offset:50});assert.equal(secondPage.payments.length,7);assert.ok(!JSON.stringify(payments).includes('requestHash'));assert.ok(!JSON.stringify(payments).includes(stranger.email));
 });

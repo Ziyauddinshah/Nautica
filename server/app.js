@@ -62,6 +62,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         if(url.pathname.startsWith('/api/user/')){
           const user=await repo.authenticateUser(userToken(req));
           if(req.method==='GET'&&url.pathname==='/api/user/session')return send(200,{user});
+          if(req.method==='GET'&&url.pathname==='/api/user/payments')return send(200,await repo.userPayments(user.id,Object.fromEntries(url.searchParams)));
           if(req.method==='GET'&&url.pathname==='/api/user/bookings')return send(200,await repo.userBookings(user.id,Object.fromEntries(url.searchParams)));
           const bookingMatch=url.pathname.match(/^\/api\/user\/bookings\/(NTC-[A-F0-9]{12})$/);
           if(req.method==='GET'&&bookingMatch)return send(200,{booking:await repo.userBooking(user.id,bookingMatch[1])});

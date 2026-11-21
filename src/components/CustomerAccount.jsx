@@ -11,7 +11,8 @@ const paymentStatusText = status => ({
   paid: 'Paid',
   pending: 'Pending',
   failed: 'Failed',
-  refunded: 'Refunded'
+  refunded: 'Refunded',
+  refund_required: 'Refund required'
 })[status] || 'Status unavailable';
 const emailStatusText = status => ({
   pending: 'Queued',
@@ -30,13 +31,16 @@ export default function CustomerAccount({
     locale
   } = useI18n();
   const backgroundRefresh=useBackgroundRefresh(Boolean(user));
-  const [data, setData] = useState({
+  const [overview,setOverview]=useState({});
+  const summary=overview.owner===user?.id?overview:{};
+  const [dataState, setData] = useState({
       bookings: [],
       total: 0
     }),
     [offset, setOffset] = useState(0),
     [tab, setTab] = useState('bookings'),
     [selected, setSelected] = useState(null);
+  const data=dataState.owner===user?.id?dataState:{bookings:[],payments:[],total:0};
   const [error, setError] = useState(''),
     [loading, setLoading] = useState(false),
     [refresh, setRefresh] = useState(0),
@@ -47,18 +51,16 @@ export default function CustomerAccount({
       confirmation: ''
     }),
     [busy, setBusy] = useState(false);
-  useEffect(()=>{setData({bookings:[],total:0});setSelected(null);},[user?.id,offset]);
+  useEffect(()=>{setData({bookings:[],total:0});setSelected(null);},[user?.id,offset,tab]);
   useEffect(() => {
-    if (!user) return;
+    if (!user||tab==='security') return;
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    request('/api/user/bookings?' + new URLSearchParams({
-      offset
-    }), {
+    request((tab==='payments'?'/api/user/payments?':'/api/user/bookings?') + new URLSearchParams({offset,...(['upcoming','past'].includes(tab)?{view:tab}:{})}), {
       signal: controller.signal
     }).then(result => {
-      if (!controller.signal.aborted) setData(result);
+      if (!controller.signal.aborted){setData({...result,owner:user.id});setOverview(previous=>({...((previous.owner===user.id)?previous:{}),...result.counts,...(tab==='bookings'&&!result.counts?{all:result.total}:{}),...(result.paymentTotal!==undefined?{paymentTotal:result.paymentTotal}:{}),owner:user.id}));}
     }).catch(error => {
       if (error.name !== 'AbortError') {
         setError(error.message);
@@ -68,7 +70,7 @@ export default function CustomerAccount({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [user?.id, offset, refresh, backgroundRefresh]);
+  }, [user?.id, offset, tab, refresh, backgroundRefresh]);
   async function logout() {
     setBusy(true);
     try {
@@ -128,11 +130,12 @@ export default function CustomerAccount({
           onUser(next);
         }} message={message} /></div> : <>
    <p className="eyebrow">{t("YOUR ACCOUNT")}</p><div className="section-head"><h1 className="admin-title">{t("Hello,")} {user.name}.</h1><button className="outline" onClick={() => setRefresh(value => value + 1)}>{t("Refresh history")}</button></div>
-   <section className="account-profile" aria-label={t("Your profile")}><div><small>{t("EMAIL")}</small><strong>{user.email}</strong></div><div><small>{t("PHONE")}</small><strong>{user.phone}</strong></div><div><small>{t("MEMBER SINCE")}</small><strong>{new Date(user.createdAt).toLocaleDateString(locale === "hi" ? "hi-IN" : "en-IN")}</strong></div><div><small>{t("YOUR BOOKINGS")}</small><strong>{t(data.total)}</strong></div></section>
-   <div className="tabs" role="tablist" aria-label={t("Account sections")}>{[['bookings', 'Booking history'], ['payments', 'Payment history'], ['security', 'Account security']].map(([id, label]) => <button key={id} className={`tab ${tab === id ? 'active' : ''}`} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{t(label)}</button>)}</div>
+   <section className="account-profile" aria-label={t("Your profile")}><div><small>{t("EMAIL")}</small><strong>{user.email}</strong></div><div><small>{t("PHONE")}</small><strong>{user.phone}</strong></div><div><small>{t("MEMBER SINCE")}</small><strong>{new Date(user.createdAt).toLocaleDateString(locale === "hi" ? "hi-IN" : "en-IN")}</strong></div><div><small>{t("YOUR BOOKINGS")}</small><strong>{t(summary.all??'—')}</strong></div></section>
+   <div className="account-summary">{[['upcoming','Upcoming journeys',summary.upcoming],['past','Previous bookings',summary.past],['payments','Payment history',summary.paymentTotal]].map(([id,label,count])=><button key={id} className="outline" onClick={()=>{setOffset(0);setTab(id);}}><span>{t(label)}</span>{' '}<strong>{count??'—'}</strong></button>)}</div>
+   <div className="tabs" role="tablist" aria-label={t("Account sections")}>{[['bookings','Booking history'],['upcoming','Upcoming journeys'],['past','Previous bookings'],['payments','Payment history'],['security','Account security']].map(([id, label]) => <button key={id} className={`tab ${tab === id ? 'active' : ''}`} role="tab" aria-selected={tab === id} onClick={() => {setOffset(0);setTab(id);}}>{t(label)}</button>)}</div>
    {loading && <p role="status">{t("Loading your history\u2026")}</p>}
-   {tab === 'bookings' && <section><h2>{t("Booking history")}</h2><p className="subtitle">{t("Your reservations, trip details and boarding passes are listed here.")}</p><div className="account-bookings">{data.bookings.map(record => <article key={record.id} className="account-booking"><div className="section-head"><div><p className="eyebrow">{record.id}</p><h3>{t(record.boat.name)}</h3></div><span className="booking-status">{t(record.status)}</span></div><p>{t(record.boat.pier)}<br />{t(record.trip.date)} · {t(record.trip.slot)}<br />{t(record.trip.guests)} {t("guests \xB7 Seats")} {t(record.trip.seats.join(', '))}</p><div className="money-row"><span>{t(paymentStatusText(record.payment.status))}</span><strong>{t(money(record.payment.amount, currency, locale))}</strong></div><small>{t("Booked")} {t(new Date(record.createdAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))} {t("\xB7 Confirmation email:")} {t(emailStatusText(record.notifications?.[0]?.status))}</small><button className="primary wide" onClick={() => setSelected(record.pass)}>{t("View boarding pass")}</button></article>)}</div>{!loading && !data.bookings.length && <p className="empty">{t("No bookings yet. Choose a boat to plan your first trip.")}</p>}</section>}
-   {tab === 'payments' && <section><h2>{t("Payment history")}</h2><p className="subtitle">{t("Payment records show the status reported for each booking.")}</p>{data.payments?.map(payment=><p className="demo-note" role="status" key={payment.id}>{money(payment.amount,'INR',locale)} · {t(payment.status==='refund_required'?'Payment received but seats could not be confirmed. Contact support for a refund.':'Payment is awaiting confirmation. Check your booking history before retrying.')} {payment.reference}</p>)}<div className="admin-table-wrap"><table className="admin-table"><caption>{t("Your payment records")}</caption><thead><tr>{['Booking', 'Vessel', 'Method', 'Status', 'Amount', 'Reference / date'].map(title => <th key={title} scope="col">{t(title)}</th>)}</tr></thead><tbody>{data.bookings.map(record => <tr key={record.id}><td>{record.id}</td><td>{t(record.boat.name)}</td><td>{t(record.payment.method)}</td><td>{t(paymentStatusText(record.payment.status))}</td><td>{t(money(record.payment.amount, currency, locale))}</td><td>{record.payment.reference}<small>{t(new Date(record.payment.paidAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))}</small></td></tr>)}</tbody></table></div>{!loading && !data.bookings.length && <p className="empty">{t("No payment records yet.")}</p>}</section>}
+   {['bookings','upcoming','past'].includes(tab) && <section><h2>{t(tab==='upcoming'?'Upcoming journeys':tab==='past'?'Previous bookings':'Booking history')}</h2><p className="subtitle">{t(tab==='upcoming'?'Your next journeys, ordered by departure. Times are local to the boarding pier.':tab==='past'?'Your previous and cancelled bookings, most recent journey first.':'Your reservations, trip details and boarding passes are listed here.')}</p><div className="account-bookings">{(data.bookings||[]).map(record => <article key={record.id} className="account-booking"><div className="section-head"><div><p className="eyebrow">{record.id}</p><h3>{t(record.boat.name)}</h3></div><span className="booking-status">{t(record.journeyState==='in_progress'?'In progress':record.status)}</span></div><p>{t(record.boat.pier)}<br />{t(record.trip.date)} · {t(record.trip.slot)}<br />{t(record.trip.guests)} {t("guests \xB7 Seats")} {t(record.trip.seats.join(', '))}</p><div className="money-row"><span>{t(paymentStatusText(record.payment.status))}</span><strong>{t(money(record.payment.amount, currency, locale))}</strong></div><small>{t("Booked")} {t(new Date(record.createdAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))} {t("\xB7 Confirmation email:")} {t(emailStatusText(record.notifications?.[0]?.status))}</small><button className="primary wide" disabled={!record.pass} onClick={() => setSelected(record.pass)}>{t("View boarding pass")}</button></article>)}</div>{!loading && !(data.bookings||[]).length && <p className="empty">{t(tab==='upcoming'?'No upcoming journeys. Explore boats to plan your next trip.':tab==='past'?'No previous bookings yet.':'No bookings yet. Choose a boat to plan your first trip.')}</p>}</section>}
+   {tab === 'payments' && <section><h2>{t('Payment history')}</h2><p className="subtitle">{t('Booking payments and unfinished payment attempts are listed here. Amounts are in INR. Demo payments are not real charges.')}</p><div className="admin-table-wrap"><table className="admin-table"><caption>{t('Your payment records')}</caption><thead><tr>{['Booking','Vessel','Method','Status','Amount','Reference / date'].map(title=><th key={title} scope="col">{t(title)}</th>)}</tr></thead><tbody>{(data.payments||[]).map(payment=><tr key={payment.source+':'+payment.id}><td>{payment.bookingId||t('No confirmed booking')}<small>{payment.trip?.date} · {t(payment.trip?.slot||'')}</small></td><td>{t(payment.boat?.name||'Status unavailable')}<small>{t(payment.boat?.pier||'')}</small></td><td>{t(payment.method)}</td><td>{t(paymentStatusText(payment.status))}{payment.status==='refund_required'&&<small>{t('Contact support for a refund.')}</small>}</td><td>{money(payment.amount,'INR',locale)}</td><td>{payment.reference||t('Awaiting reference')}<small>{payment.createdAt?new Date(payment.createdAt).toLocaleString(locale==='hi'?'hi-IN':'en-IN'):t('Date unavailable')}</small></td></tr>)}</tbody></table></div>{!loading&&!(data.payments||[]).length&&<p className="empty">{t('No payment records yet.')}</p>}</section>}
    {tab === 'security' && <section className="account-security"><h2>{t("Change password")}</h2><p className="subtitle">{t("Changing your password signs out all devices, including this session.")}</p><form onSubmit={changePassword}><label className="field">{t("Current password")}<input type="password" autoComplete="current-password" required maxLength={256} value={passwords.currentPassword} onChange={event => setPasswords({
                 ...passwords,
                 currentPassword: event.target.value
@@ -145,7 +148,7 @@ export default function CustomerAccount({
               })} /></label><button className="primary" type="submit" disabled={busy}>{t("Change password and sign out")}</button></form><hr /><h3>{t("Older browser pass copies")}</h3><p className="subtitle">{t("You can remove older pass copies saved on this device. Your account bookings will remain available.")}</p><button className="outline" onClick={() => {
             if (window.confirm('Remove older pass copies saved on this device? Your account bookings will remain available.')) setMessage(clearLegacyPassCache() ? 'Old browser pass copies cleared.' : 'Browser storage could not be cleared.');
           }}>{t("Clear old browser pass copies")}</button></section>}
-   {tab !== 'security' && <div className="admin-pagination"><button className="outline" disabled={offset === 0 || loading} onClick={() => setOffset(value => Math.max(0, value - 50))}>{t("Previous")}</button><span>{t("Page")} {t(Math.floor(offset / 50) + 1)}</span><button className="outline" disabled={offset + 50 >= data.total || loading} onClick={() => setOffset(value => value + 50)}>{t("Next")}</button></div>}
+   {tab !== 'security' && <div className="admin-pagination"><button className="outline" disabled={offset === 0 || loading} onClick={() => setOffset(value => Math.max(0, value - 50))}>{t("Previous")}</button><span>{t("Page")} {t(Math.floor(offset / 50) + 1)} · {data.total} {t(tab==='payments'?'payment records':'bookings')}</span><button className="outline" disabled={offset + 50 >= data.total || loading} onClick={() => setOffset(value => value + 50)}>{t("Next")}</button></div>}
   </>}{user && message && <p className="demo-note" role="status">{t(message)}</p>}{error && <p className="error" role="alert">{t(error)}</p>}
  </main>{selected && user && <BookingDialog flow={{
       kind: 'pass',

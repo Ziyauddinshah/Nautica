@@ -108,3 +108,18 @@ needed only once (or provide `MONGOMS_SYSTEM_BINARY`).
 Read [LOCAL_SETUP.md](LOCAL_SETUP.md), [SHARED_DATA.md](SHARED_DATA.md) and
 [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) before launch. Real boat inventory,
 policies, live provider acceptance checks and hosting still need operator setup.
+
+## Customer journey and payment history
+
+At `/account`, customers can open Upcoming journeys, Previous bookings, all
+Booking history and Payment history. Upcoming includes a trip currently in
+progress until its one-hour journey ends. Classification uses the boarding
+pier’s local time zone (India, Singapore or Lake Como/Rome), independent of the
+application host’s time zone. Cancelled bookings appear with previous bookings.
+
+Filtering/counts and pagination run on the server for the signed-in owner. Payment
+history combines booking payment snapshots—including migrated SQLite bookings—with
+unconfirmed/refund-required attempts, without duplicating confirmed gateway attempts.
+Amounts remain INR, and simulated payments stay explicitly marked as demo. No
+new data migration or separate payment documents are required to display existing
+booking payment history. Views refresh automatically and support English/Hindi.
