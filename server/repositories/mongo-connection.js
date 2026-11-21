@@ -18,7 +18,7 @@ export async function connectMongo(env=process.env,{initialize=false}={}){
   const metadata=await db.collection('metadata').findOne({_id:'schema'});
   if(!initialize&&(metadata?.state!=='ready'||metadata?.version!==1))throw new Error('MongoDB database is not initialized or migration is incomplete. Run db:init for a new database or complete the migration.');
   return {client,db,config,close:()=>client.close()};
- }catch(error){await client.close();throw new Error(error.message?.startsWith('MongoDB')?error.message:'MongoDB connection failed. Check connectivity and private server settings.');}
+ }catch(error){await client.close();const failure=new Error(error.message?.startsWith('MongoDB')?error.message:'MongoDB connection failed. Check connectivity and private server settings.');failure.code=error.code||error.cause?.code;throw failure;}
 }
 export async function createMongoIndexes(db){
  const specs={

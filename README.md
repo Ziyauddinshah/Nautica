@@ -46,6 +46,14 @@ Use a separate testing database and local demo payments; do not mix test and
 production customer records. `npm run share` serves the built app on a trusted LAN
 for testing; internet access must use the HTTPS deployment.
 
+## Check a configured Atlas connection
+
+Keep credentials only in private `.env`, using `MONGODB_URI` and `MONGODB_DB`.
+Run `npm run db:connect` to test DNS/TLS/authentication and inspect schema readiness
+without creating collections, indexes or user data. Lowercase `uri`/`database`
+variables are not application settings. If credentials were committed to Git,
+rotate them; deleting the current values does not remove historical exposure.
+
 ## Multi-server production
 
 Configure private `MONGODB_URI` and `MONGODB_DB` for one online Atlas cluster or a
