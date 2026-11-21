@@ -123,3 +123,29 @@ unconfirmed/refund-required attempts, without duplicating confirmed gateway atte
 Amounts remain INR, and simulated payments stay explicitly marked as demo. No
 new data migration or separate payment documents are required to display existing
 booking payment history. Views refresh automatically and support English/Hindi.
+
+## Stored payment information
+
+New bookings save a linked record in MongoDB `payments` in the same transaction
+as the booking and seats. Gateway payments enrich their existing attempt instead
+of creating a second receipt; local demo bookings create a clearly labelled demo
+record. Stored fields include booking/user IDs, INR amount, method/provider,
+reference, status, timestamps, boat/trip summary and safe method metadata. Card
+numbers, CVVs, UPI credentials and provider secrets are not stored.
+
+For existing Atlas bookings whose payment summary exists only in `bookings`, run
+on the computer with working Atlas access:
+
+```sh
+npm run db:backfill:payments
+npm run db:status
+```
+
+Backfill is repeatable and coordinated transactionally across replicas. It
+creates missing records/enriches compatible ones, preserves newer financial
+states, and stops on ownership/amount/request conflicts requiring reconciliation.
+It does not charge a customer, send emails, or change bookings/seats. Historical
+records are labelled historical/demo rather than falsely marked provider-verified.
+New SQLite imports perform this backfill before marking the destination ready.
+Payment history prefers linked records and falls back to old booking snapshots
+until backfill, without counting a confirmed payment twice.

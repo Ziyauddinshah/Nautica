@@ -1,3 +1,4 @@
+import {saveBookingPayment} from './payment-records.js';
 import {historyView,journeyEndExpression,paymentRow} from '../domain/history.js';
 import {setTimeout as delay} from 'node:timers/promises';
 import {randomBytes,randomUUID,scryptSync,timingSafeEqual} from 'node:crypto';
@@ -5,7 +6,7 @@ import {ApiError,digest} from '../errors.js';
 import {tripInfo,validateBooking,buildBookingRecord} from '../domain/booking.js';
 import {profile,passwordValid,passwordMatches,publicUser} from '../domain/accounts.js';
 import {amounts,seatLayout,localDate} from '../../src/domain/booking.js';
-import {bookingView} from '../views.js';
+import {bookingView,paymentView} from '../views.js';
 import {transactionOptions} from './mongo-connection.js';
 
 const badReset=()=>new ApiError(400,'This reset link is invalid or expired. Request a new one.');
@@ -156,17 +157,25 @@ export class MongoRepository{
   const reserved=mode==='private'?seatLayout(prepared.boat).map(seat=>seat.id):prepared.seats;
   for(const seat of reserved)trip.occupied[seat]={bookingId:record.id};
   await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});
-  await this.c('bookings').insertOne({_id:record.id,...record,userId:user?.id||null,requestKey:input.requestKey,requestHash:prepared.hash},{session});
+  const storedBooking={_id:record.id,...record,userId:user?.id||null,requestKey:input.requestKey,requestHash:prepared.hash};
+  await this.c('bookings').insertOne(storedBooking,{session});
   for(const audience of ['customer','admin'])await this.c('outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.email:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,messageId:`<${record.id}.${audience}@nautica.invalid>`},{session});
   if(receipt)await this.c('payments').updateOne({_id:receipt.attemptId},{$set:{status:'paid',bookingId:record.id,paymentId:receipt.paymentId}},{session});
+  await saveBookingPayment(this,storedBooking,session,{attemptId:receipt?.attemptId,providerVerified:Boolean(receipt)});
   return record.pass;
+ }
+ async withPaymentRecords(records,session){
+  if(!records.length)return records;
+  const receipts=await this.c('payments').find({bookingId:{$in:records.map(record=>record.id)},kind:'booking_payment'},{session}).toArray();
+  const byBooking=new Map(receipts.map(receipt=>[receipt.bookingId,receipt]));
+  return records.map(record=>{const receipt=byBooking.get(record.id);return receipt&&receipt.userId===(record.userId||null)?{...record,payment:{...record.payment,...paymentView({...receipt.summary,...receipt})}}:record;});
  }
  async notificationsFor(id,session){return this.c('outbox').find({bookingId:id},{session,projection:{_id:0,audience:1,status:1,attempts:1,sentAt:1,nextAttemptAt:1}}).sort({audience:1}).toArray();}
  async hasBooking(id){return Boolean(await this.c('bookings').findOne({_id:id},{projection:{_id:1}}));}
  async userBooking(userId,id){
   return this.transaction(async session=>{
    const record=await this.c('bookings').findOne({_id:id,userId},{session});if(!record)throw new ApiError(404,'Booking not found.');
-   return bookingView(record,{notifications:await this.notificationsFor(id,session)});
+   const [enriched]=await this.withPaymentRecords([record],session);return bookingView(enriched,{notifications:await this.notificationsFor(id,session)});
   });
  }
  async bookingHistory(userId,query,session){
@@ -182,16 +191,16 @@ export class MongoRepository{
   return this.transaction(async session=>{
    const history=await this.bookingHistory(userId,query,session),bookings=[];
    const jobs=history.records.length?await this.c('outbox').find({bookingId:{$in:history.records.map(record=>record.id)}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,sentAt:1}}).toArray():[];
-   for(const record of history.records){const view=bookingView(record,{notifications:jobs.filter(job=>job.bookingId===record.id)});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
-   const attemptCount=await this.c('payments').countDocuments({userId,status:{$ne:'paid'}},{session});
-   const attempts=await this.c('payments').find({userId,status:{$ne:'paid'},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1}}).sort({expires:-1}).limit(50).toArray();
+   for(const record of await this.withPaymentRecords(history.records,session)){const view=bookingView(record,{notifications:jobs.filter(job=>job.bookingId===record.id)});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
+   const attemptCount=await this.c('payments').countDocuments({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']}},{session});
+   const attempts=await this.c('payments').find({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1}}).sort({expires:-1}).limit(50).toArray();
    const payments=attempts.map(row=>({id:row._id,amount:row.amount,currency:'INR',status:row.status==='refund_required'?'refund_required':'pending',reference:row.paymentId}));
    return {bookings,payments,counts:history.counts,paymentTotal:history.counts.all+attemptCount,total:history.total,upcoming:history.counts.upcoming,offset:history.offset,limit:50};
   });
  }
  async userPayments(userId,query={}){
   const offset=offsetOf(query),now=new Date(),active={$and:[{$gt:['$__ends',now]},{$eq:['$record.status','confirmed']}]};
-  const pipeline=[{$match:{userId}},{$set:{__ends:journeyEndExpression()}},{$project:{source:{$literal:'booking'},record:'$$ROOT',__ends:1,sortDate:{$ifNull:['$payment.paidAt','$createdAt']}}},{$unionWith:{coll:'payments',pipeline:[{$match:{userId,status:{$ne:'paid'}}},{$project:{source:{$literal:'attempt'},record:'$$ROOT',sortDate:{$dateToString:{date:{$toDate:{$subtract:['$expires',900000]}},format:'%Y-%m-%dT%H:%M:%S.%LZ'}}}}]}},{$facet:{count:[{$count:'total'}],counts:[{$match:{source:'booking'}},{$group:{_id:null,all:{$sum:1},upcoming:{$sum:{$cond:[active,1,0]}}}}],rows:[{$sort:{sortDate:-1,_id:-1}},{$skip:offset},{$limit:50}]}}];
+  const pipeline=[{$match:{userId}},{$lookup:{from:'payments',localField:'id',foreignField:'bookingId',pipeline:[{$match:{userId,kind:'booking_payment'}},{$project:{_id:0,amount:1,currency:1,status:1,method:1,provider:1,reference:1,paidAt:1}}],as:'__payment'}},{$set:{payment:{$mergeObjects:['$payment',{$ifNull:[{$arrayElemAt:['$__payment',0]},{}]}]}}},{$unset:'__payment'},{$set:{__ends:journeyEndExpression()}},{$project:{source:{$literal:'booking'},record:'$$ROOT',__ends:1,sortDate:{$ifNull:['$payment.paidAt','$createdAt']}}},{$unionWith:{coll:'payments',pipeline:[{$match:{userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']}}},{$project:{source:{$literal:'attempt'},record:'$$ROOT',sortDate:{$dateToString:{date:{$toDate:{$subtract:['$expires',900000]}},format:'%Y-%m-%dT%H:%M:%S.%LZ'}}}}]}},{$facet:{count:[{$count:'total'}],counts:[{$match:{source:'booking'}},{$group:{_id:null,all:{$sum:1},upcoming:{$sum:{$cond:[active,1,0]}}}}],rows:[{$sort:{sortDate:-1,_id:-1}},{$skip:offset},{$limit:50}]}}];
   // Snapshot reads outside a transaction allow unionWith while keeping one read timestamp.
   const [result]=await this.c('bookings').aggregate(pipeline,{readConcern:{level:'snapshot'}}).toArray();
   const counts={all:result.counts[0]?.all||0,upcoming:result.counts[0]?.upcoming||0};counts.past=counts.all-counts.upcoming;
@@ -200,6 +209,6 @@ export class MongoRepository{
  async adminBookings(query={}){
   const filter={};for(const [key,column]of [['boatId','boat.id'],['date','trip.date'],['slot','trip.slot']])if(query[key])filter[column]=String(query[key]);
   if(query.q){const term=String(query.q).slice(0,150).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');filter.$or=['id','customer.name','customer.email','customer.phone'].map(key=>({[key]:{$regex:term,$options:'i'}}));}
-  return this.transaction(async session=>({bookings:await this.c('bookings').find(filter,{session}).sort({createdAt:-1,_id:-1}).skip(offsetOf(query)).limit(50).toArray(),total:await this.c('bookings').countDocuments(filter,{session}),offset:offsetOf(query),limit:50}));
+  return this.transaction(async session=>{const records=await this.c('bookings').find(filter,{session}).sort({createdAt:-1,_id:-1}).skip(offsetOf(query)).limit(50).toArray();return {bookings:await this.withPaymentRecords(records,session),total:await this.c('bookings').countDocuments(filter,{session}),offset:offsetOf(query),limit:50};});
  }
 }

@@ -107,3 +107,18 @@ An ambiguous timeout can mean the write already committed: check history or
 retry the same request key before creating a new payment. Visible account/admin
 pages refresh every 15 seconds and on focus/reconnect; seat maps poll every 10
 seconds. These screens are snapshots, not instantaneous live pushes.
+
+## Add payment records to an already migrated database
+
+Do not repeat the SQLite import or initialize/drop the current database. Update
+all application replicas to the new code before backfilling, so every history
+query recognizes linked payment records. On the machine with working Atlas
+connectivity run `npm run db:backfill:payments`, then `npm run db:status`.
+Restart the app so new bookings automatically save their payment record.
+
+This writes only payment records linked to existing bookings. It makes no
+gateway charges, sends no emails and does not alter bookings or seats. Demo
+records remain demo; imported real-payment summaries remain historical unless
+there was a verified gateway attempt. A repeated run creates no duplicates and
+stops rather than overwrite financial/ownership conflicts. New SQLite imports
+already create these records before the destination becomes ready.

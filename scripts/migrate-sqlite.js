@@ -1,3 +1,5 @@
+import {MongoRepository} from '../server/repositories/mongo.js';
+import {backfillPaymentRecords} from '../server/repositories/payment-records.js';
 import {DatabaseSync} from 'node:sqlite';
 import {resolve} from 'node:path';
 import {existsSync} from 'node:fs';
@@ -32,6 +34,7 @@ try{
  if(await db.collection('users').countDocuments({})!==users||await db.collection('bookings').countDocuments({})!==bookings)throw new Error('Import counts do not match. Database stays unavailable.');
  const seats=[...inventory.values()].reduce((total,row)=>total+Object.values(row.occupied).filter(value=>value.bookingId).length,0);
  if(seats!==source.prepare('SELECT count(*) n FROM seats').get().n)throw new Error('Seat counts do not match. Database stays unavailable.');
+ await backfillPaymentRecords(new MongoRepository(connection));
  await db.collection('metadata').updateOne({_id:'schema',state:'migrating'},{$set:{state:'ready',migratedAt:new Date().toISOString()}});
  console.log(`Migration verified: ${users} users, ${bookings} bookings, ${seats} reserved seats. Source unchanged; sessions/reset links were not imported. Reconcile payment/email activity before reopening traffic.`);
 }catch(error){console.error('Migration stopped. Source unchanged; any partially imported MongoDB namespace must stay offline.');throw error;}

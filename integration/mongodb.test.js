@@ -4,7 +4,10 @@ import {randomUUID,createHmac} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
-import {spawnSync} from 'node:child_process';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const execFileAsync=promisify(execFile);
+async function runCLI(command,args,options){try{const result=await execFileAsync(command,args,options);return {...result,status:0};}catch(error){return {status:error.code,stdout:error.stdout||'',stderr:error.stderr||error.message};}}
 import {MongoMemoryReplSet} from 'mongodb-memory-server-core';
 import {MongoClient} from 'mongodb';
 import {connectMongo,createMongoIndexes} from '../server/repositories/mongo-connection.js';
@@ -75,13 +78,13 @@ test('password reset is single-use across replicas and revokes every old session
 });
 test('distributed checkout holds seats; duplicate callbacks and webhooks confirm exactly one booking',async()=>{
  const {a,b}=await fixture(),user=(await a.registerUser(account())).user,{gateway,count,setCaptured}=gatewayFixture(),pa=createPaymentService(new MongoPaymentStore(a),gateway),pb=createPaymentService(new MongoPaymentStore(b),gateway),input=booking(user);
- const order=await pa.order(input,user);assert.equal(order.amount,126000);assert.equal(order.currency,'INR');assert.deepEqual((await b.availability(input)).bookedSeats,['01']);
+ const order=await pa.order({...input,cvv:'PRIVATE_CVV',cardNumber:'PRIVATE_PAN',upi:'PRIVATE_UPI'},user);assert.ok(!JSON.stringify(await a.c('payments').findOne({_id:order.attemptId})).includes('PRIVATE_'));assert.equal(order.amount,126000);assert.equal(order.currency,'INR');assert.deepEqual((await b.availability(input)).bookedSeats,['01']);
  await assert.rejects(pb.order({...input,requestKey:randomUUID()},user),{status:409});assert.equal((await pb.order(input,user)).orderId,order.orderId);assert.equal(count(),1);
  const verify={attemptId:order.attemptId,orderId:order.orderId,paymentId:'pay_1',signature:sign(order.orderId+'|pay_1')};
  await assert.rejects(pb.verify({...verify,signature:'0'.repeat(64)},user),{status:400});setCaptured(false);await assert.rejects(pa.verify(verify,user),{status:409});assert.equal(await a.c('bookings').countDocuments({}),0);setCaptured(true);
  const raw=JSON.stringify({event:'payment.captured',payload:{payment:{entity:{id:'pay_1',order_id:order.orderId}}}});
  const results=await Promise.all([pa.verify(verify,user),pb.verify(verify,user),pb.webhook(raw,sign(raw,'test-webhook'))]);
- assert.equal(results[0].id,results[1].id);assert.equal(results[0].paymentStatus,'paid');const ledger=await b.userPayments(user.id,{});assert.equal(ledger.total,1);assert.equal(ledger.payments[0].status,'paid');setCaptured(false);assert.equal((await pb.verify(verify,user)).id,results[0].id);assert.equal(await a.c('bookings').countDocuments({}),1);assert.equal(await a.c('outbox').countDocuments({}),2);
+ assert.equal(results[0].id,results[1].id);assert.equal(results[0].paymentStatus,'paid');const receiptRecord=await a.c('payments').findOne({bookingId:results[0].id});assert.equal(receiptRecord.kind,'booking_payment');assert.equal(receiptRecord.verification,'provider_verified');assert.equal(receiptRecord.currency,'INR');assert.equal(await a.c('payments').countDocuments({}),1);const ledger=await b.userPayments(user.id,{});assert.equal(ledger.total,1);assert.equal(ledger.payments[0].status,'paid');setCaptured(false);assert.equal((await pb.verify(verify,user)).id,results[0].id);assert.equal(await a.c('bookings').countDocuments({}),1);assert.equal(await a.c('outbox').countDocuments({}),2);
 });
 test('a late captured payment cannot steal seats already reserved by another booking',async()=>{
  const {a,b}=await fixture(),user=(await a.registerUser(account())).user,{gateway}=gatewayFixture(),pa=createPaymentService(new MongoPaymentStore(a),gateway),pb=createPaymentService(new MongoPaymentStore(b),gateway),input=booking(user),order=await pa.order(input,user);
@@ -104,7 +107,7 @@ test('HTTP replicas authenticate shared cookies and never expose database config
   const origins=servers.map(server=>'http://127.0.0.1:'+server.address().port),input=account();
   const response=await fetch(origins[0]+'/api/user/register',{method:'POST',headers:{Origin:origins[0],'Content-Type':'application/json','X-Nautica-Request':'1'},body:JSON.stringify(input)}),cookie=response.headers.get('set-cookie').split(';')[0];assert.equal(response.status,201);
   const session=await fetch(origins[1]+'/api/user/session',{headers:{Cookie:cookie}}),body=await session.json();assert.equal(body.user.email,input.email);assert.ok(!JSON.stringify(body).includes('mongodb'));
-  const setup=spawnSync(process.execPath,['scripts/admin-create.js'],{env:{...process.env,NODE_ENV:'test',MONGODB_URI:uri,MONGODB_DB:a.config.database,NAUTICA_ADMIN_USER:'admin',NAUTICA_ADMIN_PASSWORD:'admin-test-passphrase'},encoding:'utf8'});assert.equal(setup.status,0,setup.stderr);assert.ok(!setup.stdout.includes('admin-test-passphrase'));
+  const setup=await runCLI(process.execPath,['scripts/admin-create.js'],{env:{...process.env,NODE_ENV:'test',MONGODB_URI:uri,MONGODB_DB:a.config.database,NAUTICA_ADMIN_USER:'admin',NAUTICA_ADMIN_PASSWORD:'admin-test-passphrase'},encoding:'utf8'});assert.equal(setup.status,0,setup.stderr);assert.ok(!setup.stdout.includes('admin-test-passphrase'));
   await a.setAdmin('admin','admin-test-passphrase');const admin=await a.loginAdmin('admin','admin-test-passphrase');assert.equal(await b.authenticateAdmin(admin.token),'admin');
  }finally{for(const server of servers){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}}
 });
@@ -113,9 +116,9 @@ test('read-only SQLite migration preserves accounts, hashes, ownership, seats, p
  const db=openStore(filename);initUsers(db);const input=account(),user=registerUser(db,input).user;const pass=createBooking(db,booking(user),'seats',user);setAdmin(db,'admin','admin-test-passphrase');db.close();
  const env={...process.env,NODE_ENV:'test',MONGODB_URI:uri,MONGODB_DB:database};
  try{
-  const result=spawnSync(process.execPath,['scripts/migrate-sqlite.js',filename],{env,encoding:'utf8',cwd:resolve('.'),timeout:30000});assert.equal(result.status,0,result.stderr);
+  const result=await runCLI(process.execPath,['scripts/migrate-sqlite.js',filename],{env,encoding:'utf8',cwd:resolve('.'),timeout:30000});assert.equal(result.status,0,result.stderr);
   const connection=await connectMongo(env),repo=new MongoRepository(connection);
-  try{assert.equal((await repo.loginUser(input)).user.id,user.id);assert.equal((await repo.userBookings(user.id)).bookings[0].id,pass.id);assert.deepEqual((await repo.availability(booking(user))).bookedSeats,['01']);assert.equal(await repo.c('outbox').countDocuments({}),2);assert.equal((await repo.loginAdmin('admin','admin-test-passphrase')).username,'admin');await repo.db.dropDatabase();}finally{await repo.close();}
+  try{const importedPayment=await repo.c('payments').findOne({bookingId:pass.id});assert.equal(importedPayment.status,'demo_paid');assert.equal(importedPayment.verification,'demo');assert.equal((await repo.loginUser(input)).user.id,user.id);assert.equal((await repo.userBookings(user.id)).bookings[0].id,pass.id);assert.deepEqual((await repo.availability(booking(user))).bookedSeats,['01']);assert.equal(await repo.c('outbox').countDocuments({}),2);assert.equal((await repo.loginAdmin('admin','admin-test-passphrase')).username,'admin');await repo.db.dropDatabase();}finally{await repo.close();}
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
 test('an uncertain commit retries the commit without rerunning the business callback',async()=>{
@@ -169,4 +172,17 @@ test('history filters and payment pagination operate on all owner records, inclu
  const previous=await b.userBookings(user.id,{view:'past',offset:50});assert.equal(previous.total,55);assert.equal(previous.bookings.length,5);assert.ok(previous.bookings.every(record=>record.trip.date==='2020-01-01'));
  const payments=await b.userPayments(user.id,{});assert.equal(payments.total,57);assert.equal(payments.payments.length,50);assert.equal(payments.payments.find(row=>row.reference==='pay_refund').status,'refund_required');assert.ok(payments.payments.some(row=>row.status==='demo_paid'));assert.ok(payments.payments.every(row=>row.amount!==999999));
  const secondPage=await b.userPayments(user.id,{offset:50});assert.equal(secondPage.payments.length,7);assert.ok(!JSON.stringify(payments).includes('requestHash'));assert.ok(!JSON.stringify(payments).includes(stranger.email));
+});
+test('new bookings atomically save one linked payment and historical backfill is repeatable across replicas',async()=>{
+ const {backfillPaymentRecords}=await import('../server/repositories/payment-records.js');
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user,input=booking(user),pass=await a.createBooking(input,'seats',user);
+ const payment=await b.c('payments').findOne({bookingId:pass.id});assert.equal(payment.kind,'booking_payment');assert.equal(payment.status,'demo_paid');assert.equal(payment.amount,126000);assert.equal(payment.userId,user.id);assert.equal(payment.verification,'demo');
+ await b.createBooking(input,'seats',user);assert.equal(await a.c('payments').countDocuments({bookingId:pass.id}),1);assert.equal((await b.userPayments(user.id)).total,1);
+ // Reproduce a migrated booking whose payment existed only in its booking document.
+ await a.c('payments').deleteOne({_id:payment._id});
+ const outboxCount=await a.c('outbox').countDocuments({}),seatSnapshot=JSON.stringify(await a.c('inventory').findOne({}));
+ await Promise.all([backfillPaymentRecords(a),backfillPaymentRecords(b)]);
+ assert.equal(await b.c('payments').countDocuments({bookingId:pass.id}),1);assert.deepEqual(await backfillPaymentRecords(a),{created:0,updated:0,unchanged:1});
+ assert.equal(await a.c('outbox').countDocuments({}),outboxCount);assert.equal(JSON.stringify(await a.c('inventory').findOne({})),seatSnapshot);assert.equal((await b.userPayments(user.id)).total,1);
+ await a.c('payments').updateOne({bookingId:pass.id},{$set:{status:'refunded'}});await backfillPaymentRecords(b);assert.equal((await b.userPayments(user.id)).payments[0].status,'refunded');assert.equal((await b.userBooking(user.id,pass.id)).payment.status,'refunded');assert.equal((await b.userBookings(user.id)).bookings[0].payment.status,'refunded');assert.equal((await b.adminBookings({})).bookings[0].payment.status,'refunded');
 });

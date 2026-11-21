@@ -2,6 +2,7 @@
 const pick=(object,keys)=>Object.fromEntries(keys.filter(key=>object?.[key]!==undefined).map(key=>[key,object[key]]));
 export const passView=pass=>pick(pass,['id','boatId','date','slot','guests','seats','name','extras','total','currencyBase','method','createdAt','serverConfirmed','emailStatus','paymentStatus']);
 export function notificationView(job,admin=false){return pick(job,admin?['audience','status','attempts','sentAt','nextAttemptAt']:['audience','status','sentAt']);}
+export const paymentView=payment=>pick(payment,['type','provider','bank','network','last4','method','status','reference','paidAt','amount','currency']);
 export function bookingView(record,{admin=false,notifications=[]}={}){
  return {
   ...pick(record,['id','status','createdAt',...(admin?['bookingMode']:[])]),
@@ -10,7 +11,7 @@ export function bookingView(record,{admin=false,notifications=[]}={}){
   trip:pick(record.trip,['date','slot','guests','seats']),
   extras:Array.isArray(record.extras)?record.extras:[],
   pricing:pick(record.pricing,['base','addons','fee','total']),
-  payment:pick(record.payment,['type','provider','bank','network','last4','method','status','reference','paidAt','amount','currency']),
+  payment:paymentView(record.payment),
   pass:passView(record.pass),
   notifications:notifications.filter(job=>admin||job.audience==='customer').map(job=>notificationView(job,admin)),
  };
