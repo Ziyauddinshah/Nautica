@@ -9,6 +9,5 @@ try{
  console.log('Schema:',metadata?.state||'not initialized');
  if(!metadata)console.log('For existing SQLite records, migrate first. Use db:init only for a deliberately new database.');
 }catch(error){
- const message=['ENOTFOUND','EAI_AGAIN'].includes(error.code)?'Atlas DNS lookup failed. Verify the current hostname in Atlas Connect > Drivers and check that the cluster is running.':error.code===18?'Atlas authentication failed. Check the database user and password in private .env.':error.message;
- console.error(message);process.exitCode=1;
+ if(error.diagnostics){console.error('Connection check: '+error.diagnostics.category);console.error(error.diagnostics.message);console.error(error.diagnostics.hint);}else console.error(error.message);process.exitCode=1;
 }finally{await connection?.close();}

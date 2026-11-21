@@ -1,24 +1,26 @@
+import {mongoDiagnostics} from '../mongo-diagnostics.js';
 import {MongoClient} from 'mongodb';
 import {mongoConfig} from '../mongo-config.js';
 export const transactionOptions={readConcern:{level:'snapshot'},writeConcern:{w:'majority',j:true,wtimeoutMS:5000},readPreference:'primary',maxCommitTimeMS:5000};
 export async function connectMongo(env=process.env,{initialize=false}={}){
  const config=mongoConfig(env);
- const client=new MongoClient(config.uri,{
+ let client;
+ try{
+ client=new MongoClient(config.uri,{
   appName:'nautica',readPreference:'primary',readConcern:{level:'majority'},
   writeConcern:{w:'majority',j:true,wtimeoutMS:5000},retryWrites:true,
   serverSelectionTimeoutMS:5000,connectTimeoutMS:5000,socketTimeoutMS:10000,
   maxPoolSize:30,minPoolSize:0,waitQueueTimeoutMS:5000,
  });
- try{
   await client.connect();
   const hello=await client.db('admin').command({hello:1});
-  if(hello.maxWireVersion<21)throw new Error('MongoDB 7 or newer is required.');
-  if(!hello.setName&&hello.msg!=='isdbgrid')throw new Error('MongoDB transactions require a replica set or sharded cluster.');
+  if(hello.maxWireVersion<21)throw Object.assign(new Error('MongoDB 7 or newer is required.'),{setupError:true});
+  if(!hello.setName&&hello.msg!=='isdbgrid')throw Object.assign(new Error('MongoDB transactions require a replica set or sharded cluster.'),{setupError:true});
   const db=client.db(config.database);
   const metadata=await db.collection('metadata').findOne({_id:'schema'});
-  if(!initialize&&(metadata?.state!=='ready'||metadata?.version!==1))throw new Error('MongoDB database is not initialized or migration is incomplete. Run db:init for a new database or complete the migration.');
+  if(!initialize&&(metadata?.state!=='ready'||metadata?.version!==1))throw Object.assign(new Error('MongoDB database is not initialized or migration is incomplete. Run db:init for a new database or complete the migration.'),{setupError:true});
   return {client,db,config,close:()=>client.close()};
- }catch(error){await client.close();const failure=new Error(error.message?.startsWith('MongoDB')?error.message:'MongoDB connection failed. Check connectivity and private server settings.');failure.code=error.code||error.cause?.code;throw failure;}
+ }catch(error){await client?.close().catch(()=>{});const diagnostics=mongoDiagnostics(error);const failure=new Error(error.setupError?error.message:diagnostics.message);failure.diagnostics=error.setupError?null:diagnostics;throw failure;}
 }
 export async function createMongoIndexes(db){
  const specs={
