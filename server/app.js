@@ -8,7 +8,7 @@ import {createSqliteRepository} from './repositories/sqlite.js';
 import {passView,bookingView,emailServiceView} from './views.js';
 import {ApiError,digest} from './errors.js';
 
-export function createApp(db, { mode = 'seats', production = false, publicOrigin = '', emailService = null, paymentMode = production?'disabled':'demo', payments = null, trustedProxyIPs = [], proxyToken = '', repository = null } = {}) {
+export function createApp(db, { mode = 'seats', production = false, publicOrigin = '', emailService = null, smsService = null, paymentMode = production?'disabled':'demo', payments = null, trustedProxyIPs = [], proxyToken = '', repository = null } = {}) {
   const repo=repository||createSqliteRepository(db);
   const attempts = new Map(),userAttempts=new Map();
   function clientIP(req){const peer=req.socket.remoteAddress,proof=req.headers['x-nautica-proxy-token'];const verified=proxyToken.length>=32&&typeof proof==='string'&&Buffer.byteLength(proof)===Buffer.byteLength(proxyToken)&&timingSafeEqual(Buffer.from(proof),Buffer.from(proxyToken));if(!verified&&!trustedProxyIPs.includes(peer))return peer;const forwarded=req.headers['x-forwarded-for']?.split(',').at(-1)?.trim();return forwarded&&isIP(forwarded)?forwarded:peer;}
@@ -25,7 +25,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
     try {
       const url=new URL(req.url,'http://localhost');
       if (url.pathname.startsWith('/api/')) {
-        if(req.method==='POST'&&url.pathname==='/api/payments/razorpay/webhook'){const chunks=[];let size=0;for await(const chunk of req){chunks.push(chunk);size+=chunk.length;if(size>131072)throw new ApiError(413,'Request is too large.');}if(!payments)throw new ApiError(503,'Online booking is currently unavailable.');await payments.webhook(Buffer.concat(chunks),req.headers['x-razorpay-signature']);emailService?.kick();return send(200,{ok:true});}
+        if(req.method==='POST'&&url.pathname==='/api/payments/razorpay/webhook'){const chunks=[];let size=0;for await(const chunk of req){chunks.push(chunk);size+=chunk.length;if(size>131072)throw new ApiError(413,'Request is too large.');}if(!payments)throw new ApiError(503,'Online booking is currently unavailable.');await payments.webhook(Buffer.concat(chunks),req.headers['x-razorpay-signature']);emailService?.kick();smsService?.kick();return send(200,{ok:true});}
         if (req.method === 'POST') {
           const origin=req.headers.origin;
           const allowed = origin && (origin === publicOrigin || (!production && origin === `http://${req.headers.host}`) || (!production && ['http://localhost:3000','http://127.0.0.1:3000'].includes(origin)));
@@ -37,9 +37,9 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         };
         if(req.method==='GET'&&url.pathname==='/api/health'){await repo.health();return send(200,{ok:true});}
         if(req.method==='GET'&&url.pathname==='/api/payments/config')return send(200,{mode:paymentMode,enabled:paymentMode==='demo'||(paymentMode==='razorpay'&&Boolean(payments?.enabled))});
-        if(req.method==='POST'&&['/api/payments/order','/api/payments/verify'].includes(url.pathname)){const user=await repo.authenticateUser(userToken(req));if(paymentMode!=='razorpay'||!payments?.enabled)throw new ApiError(503,'Online booking is currently unavailable.');await throttle(req,'checkout',user.id);const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');if(url.pathname.endsWith('/order'))return send(201,await payments.order({...input,language},user));const booking=await payments.verify(input,user);emailService?.kick();return send(200,{booking:passView(booking)});}
+        if(req.method==='POST'&&['/api/payments/order','/api/payments/verify'].includes(url.pathname)){const user=await repo.authenticateUser(userToken(req));if(paymentMode!=='razorpay'||!payments?.enabled)throw new ApiError(503,'Online booking is currently unavailable.');await throttle(req,'checkout',user.id);const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');if(url.pathname.endsWith('/order'))return send(201,await payments.order({...input,language},user));const booking=await payments.verify(input,user);emailService?.kick();smsService?.kick();return send(200,{booking:passView(booking)});}
         if(req.method==='GET'&&url.pathname==='/api/availability')return send(200,{...await repo.availability(Object.fromEntries(url.searchParams)),mode});
-        if(req.method==='POST'&&url.pathname==='/api/bookings'){if(paymentMode!=='demo'||production)throw new ApiError(503,'Online booking is currently unavailable.');const user=await repo.authenticateUser(userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=await repo.createBooking({...input,email:user.email,language},mode,user);emailService?.kick();return send(201,{booking:passView(booking)});}
+        if(req.method==='POST'&&url.pathname==='/api/bookings'){if(paymentMode!=='demo'||production)throw new ApiError(503,'Online booking is currently unavailable.');const user=await repo.authenticateUser(userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=await repo.createBooking({...input,email:user.email,language},mode,user);emailService?.kick();smsService?.kick();return send(201,{booking:passView(booking)});}
         if(req.method==='POST'&&url.pathname==='/api/user/forgot-password'){
           const input=await body();await throttle(req,'forgot',typeof input?.email==='string'?input.email.trim().toLowerCase().slice(0,150):'');
           const settings=emailService?.status();
@@ -83,7 +83,9 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
           const username=await repo.authenticateAdmin(token(req));
           if(req.method==='GET'&&url.pathname==='/api/admin/payment-attention')return send(200,{payments:(await payments?.attention())||[]});
           if(req.method==='GET'&&url.pathname==='/api/admin/session')return send(200,{username});
-          if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=await repo.adminBookings(Object.fromEntries(url.searchParams));return send(200,{...data,paymentAttention:(await payments?.attention())||[],bookings:await Promise.all(data.bookings.map(async record=>bookingView(record,{admin:true,notifications:await repo.notificationsFor(record.id)}))),emailService:emailServiceView(emailService)});}
+          if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=await repo.adminBookings(Object.fromEntries(url.searchParams));return send(200,{...data,paymentAttention:(await payments?.attention())||[],bookings:await Promise.all(data.bookings.map(async record=>bookingView(record,{admin:true,notifications:await repo.notificationsFor(record.id)}))),emailService:emailServiceView(emailService),smsService:{configured:smsService?.status().configured===true}});}
+          const smsRetry=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/sms\/retry$/);
+          if(req.method==='POST'&&smsRetry){if(!smsService?.status().configured)throw new ApiError(503,'SMS service is unavailable.');if(!await repo.hasBooking(smsRetry[1]))throw new ApiError(404,'Booking not found.');await smsService.retry(smsRetry[1]);return send(200,{ok:true});}
           const retryMatch=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/emails\/retry$/);
           if(req.method==='POST'&&retryMatch){if(!emailService?.status().configured)throw new ApiError(503,'Configure Gmail SMTP on the server before retrying email.');if(!await repo.hasBooking(retryMatch[1]))throw new ApiError(404,'Booking not found.');await emailService.retry(retryMatch[1]);return send(200,{ok:true});}
           if(req.method==='POST'&&url.pathname==='/api/admin/logout'){await repo.logoutAdmin(token(req));return send(200,{ok:true},{'Set-Cookie':cookie('',0)});}

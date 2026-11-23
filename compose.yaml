@@ -2,6 +2,7 @@ services:
   app:
     build: .
     image: nautica:local
+    stop_grace_period: 60s
     restart: unless-stopped
     env_file: .env
     environment:

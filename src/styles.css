@@ -519,3 +519,5 @@ button,.quiet,.outline,.primary,.chip,.tab,.bank,.back-link{min-height:44px}
 
 .account-main>.tabs{flex-wrap:wrap;gap:8px}.account-main>.tabs .tab{min-height:48px;white-space:normal;flex:1 1 150px}.account-main .admin-table td small{display:block;margin-top:6px;overflow-wrap:anywhere}
 .account-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}.account-summary button{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:start;padding:18px}.account-summary strong{font-size:1.5rem}
+
+.sms-status{display:block;margin-top:8px;line-height:1.6}

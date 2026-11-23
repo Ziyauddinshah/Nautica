@@ -149,3 +149,56 @@ records are labelled historical/demo rather than falsely marked provider-verifie
 New SQLite imports perform this backfill before marking the destination ready.
 Payment history prefers linked records and falls back to old booking snapshots
 until backfill, without counting a confirmed payment twice.
+
+## TextBee booking SMS
+
+Set these in private `.env` (never in `VITE_` variables or `.env.example`):
+
+```dotenv
+SMS_ENABLED=true
+TEXTBEE_API_KEY=YOUR_PRIVATE_KEY
+TEXTBEE_DEVICE_ID=YOUR_DEVICE_ID_FROM_TEXTBEE
+SMS_ADMIN_TO=YOUR_ADMIN_PHONE_WITH_PLUS_COUNTRY_CODE
+SMS_DEFAULT_COUNTRY_CODE=91
+```
+
+`SMS_ADMIN_TO` is optional; without it only the customer gets SMS. Restart all
+app replicas after configuration changes, using the same settings on each.
+`npm run sms:verify` checks the API key/selected device with a read-only request;
+it sends no SMS. Then make a controlled booking using your own destination number.
+Existing bookings are not retroactively texted. SMS jobs are created only for new
+bookings while SMS is configured/enabled. Demo bookings are explicitly labelled.
+
+[TextBee's current send API](https://textbee.dev/docs/sending-sms/sending-sms) uses
+`POST /api/v1/gateway/send-sms` with `deviceId` and a private `x-api-key` header.
+The Android TextBee phone needs an active SIM, SMS permissions, power and internet;
+messages use its SIM/carrier, and charges/plan limits apply. Hindi/long messages
+can use multiple SMS segments. No Android SDK is required for the Nautica web app.
+
+Destinations should be E.164 (`+` and country code). Only Indian 10-digit local
+numbers are expanded automatically when SMS_DEFAULT_COUNTRY_CODE=91; for other
+countries supply the full international number. Wrong/missing numbers fail the
+SMS job without undoing the booking or preventing its email confirmation.
+
+Jobs in MongoDB `sms_outbox` commit with bookings, use distinct customer/admin IDs
+and fenced leases, and run separately from email. The app shows queued, accepted,
+dispatched, sent, delivered, failed and unknown outcomes. Acceptance is **not**
+delivery; the worker polls the selected device's batch/message status. It checks
+each accepted message up to 100 times (about eight hours), then use TextBee's
+history to investigate later outcomes. Changing the sender device pauses tracking
+of old-device batches; use that device's provider history for reconciliation.
+
+Only definite rate-limit rejections retry automatically (at most three attempts).
+Send timeouts, malformed acknowledgements and expired sending leases become
+unknown and are not automatically resent. No provider idempotency guarantee is
+assumed. A crash after provider acceptance can lose the local batch reference;
+inspect TextBee history before taking any manual resend action. The admin button
+retries rejected requests without an accepted batch; it never resends unknown,
+accepted, sent or delivered jobs. Provider-reported failures after acceptance
+must be investigated in TextBee. No exactly-once carrier delivery is promised.
+
+Messages include booking reference, boat, date/time, seats, fare and payment/demo
+status, without passwords, reset links, API credentials or full payment references.
+API keys, device IDs, admin destinations and raw provider responses are excluded
+from browser APIs. Both English and Hindi are supported. SMS is for booking
+notifications; password reset continues to use the existing email workflow.

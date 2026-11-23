@@ -101,3 +101,26 @@ a new gated namespace and marks it ready only after counts/integrity/index check
 There is no distributed live dual-write or automatic merge of independent local
 SQLite databases. Upgrade incompatible schema versions through an explicit rollout
 rather than having app replicas silently adopt them.
+
+## TextBee SMS
+
+The SMS worker (`services/sms.js`) uses an injected TextBee gateway and
+`MongoSmsStore`. Its `sms_outbox` is separate from the email outbox. Configured
+app replicas insert deterministic customer/admin jobs in the booking transaction;
+old bookings and database migrations do not trigger SMS. Outbox claims use server
+time and token-fenced acknowledgements. Only configured future bookings are queued.
+
+A provider acceptance records the selected device/batch internally and begins
+read-only delivery polling. A sending lease that expires becomes unknown, never
+an automatic resend. The provider currently documents no send idempotency key;
+we do not invent one or treat a timeout as a rejection. Only HTTP 429 rejections
+retry automatically, with bounded attempts. This prioritizes avoiding duplicate
+SMS at the cost of manual review for ambiguous sends. Polling never causes a send.
+Keys/device IDs/recipient routing/provider responses are not browser API fields;
+notification views expose only channel, audience, safe status/timestamps and the
+admin retry-eligibility boolean. Password reset stays on email. See README.md
+for configuration, message segmentation, Android-phone operation and limits.
+
+Before restoring a MongoDB backup, reconcile TextBee sends since that backup
+before restarting SMS workers: a restored pending job may have been sent after
+the snapshot. Database restoration cannot roll back carrier side effects.

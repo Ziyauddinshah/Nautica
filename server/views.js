@@ -1,7 +1,7 @@
 // HTTP response allowlists: persistence objects and service configuration must not be serialized wholesale.
 const pick=(object,keys)=>Object.fromEntries(keys.filter(key=>object?.[key]!==undefined).map(key=>[key,object[key]]));
 export const passView=pass=>pick(pass,['id','boatId','date','slot','guests','seats','name','extras','total','currencyBase','method','createdAt','serverConfirmed','emailStatus','paymentStatus']);
-export function notificationView(job,admin=false){return pick(job,admin?['audience','status','attempts','sentAt','nextAttemptAt']:['audience','status','sentAt']);}
+export function notificationView(job,admin=false){return pick(job,admin?['audience','channel','status','attempts','sentAt','nextAttemptAt','acceptedAt','deliveredAt','retryable']:['audience','channel','status','sentAt','acceptedAt','deliveredAt']);}
 export const paymentView=payment=>pick(payment,['type','provider','bank','network','last4','method','status','reference','paidAt','amount','currency']);
 export function bookingView(record,{admin=false,notifications=[]}={}){
  return {

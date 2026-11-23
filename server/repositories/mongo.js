@@ -160,6 +160,7 @@ export class MongoRepository{
   const storedBooking={_id:record.id,...record,userId:user?.id||null,requestKey:input.requestKey,requestHash:prepared.hash};
   await this.c('bookings').insertOne(storedBooking,{session});
   for(const audience of ['customer','admin'])await this.c('outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.email:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,messageId:`<${record.id}.${audience}@nautica.invalid>`},{session});
+  if(this.smsEnabled)for(const audience of (this.smsAdminEnabled?['customer','admin']:['customer']))await this.c('sms_outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.phone:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,createdAt:record.createdAt},{session});
   if(receipt)await this.c('payments').updateOne({_id:receipt.attemptId},{$set:{status:'paid',bookingId:record.id,paymentId:receipt.paymentId}},{session});
   await saveBookingPayment(this,storedBooking,session,{attemptId:receipt?.attemptId,providerVerified:Boolean(receipt)});
   return record.pass;
@@ -170,7 +171,14 @@ export class MongoRepository{
   const byBooking=new Map(receipts.map(receipt=>[receipt.bookingId,receipt]));
   return records.map(record=>{const receipt=byBooking.get(record.id);return receipt&&receipt.userId===(record.userId||null)?{...record,payment:{...record.payment,...paymentView({...receipt.summary,...receipt})}}:record;});
  }
- async notificationsFor(id,session){return this.c('outbox').find({bookingId:id},{session,projection:{_id:0,audience:1,status:1,attempts:1,sentAt:1,nextAttemptAt:1}}).sort({audience:1}).toArray();}
+ async smsNotifications(ids,session){
+  const jobs=await this.c('sms_outbox').find({bookingId:{$in:ids}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,attempts:1,sentAt:1,deliveredAt:1,acceptedAt:1,batchId:1}}).toArray();
+  return jobs.map(job=>({...job,channel:'sms',retryable:job.status==='failed'&&!job.batchId}));
+ }
+ async notificationsFor(id,session){
+  const email=await this.c('outbox').find({bookingId:id},{session,projection:{_id:0,audience:1,status:1,attempts:1,sentAt:1,nextAttemptAt:1}}).sort({audience:1}).toArray();
+  return [...email,...await this.smsNotifications([id],session)];
+ }
  async hasBooking(id){return Boolean(await this.c('bookings').findOne({_id:id},{projection:{_id:1}}));}
  async userBooking(userId,id){
   return this.transaction(async session=>{
@@ -191,7 +199,8 @@ export class MongoRepository{
   return this.transaction(async session=>{
    const history=await this.bookingHistory(userId,query,session),bookings=[];
    const jobs=history.records.length?await this.c('outbox').find({bookingId:{$in:history.records.map(record=>record.id)}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,sentAt:1}}).toArray():[];
-   for(const record of await this.withPaymentRecords(history.records,session)){const view=bookingView(record,{notifications:jobs.filter(job=>job.bookingId===record.id)});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
+   const sms=await this.smsNotifications(history.records.map(record=>record.id),session);
+   for(const record of await this.withPaymentRecords(history.records,session)){const view=bookingView(record,{notifications:[...jobs.filter(job=>job.bookingId===record.id),...sms.filter(job=>job.bookingId===record.id)]});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
    const attemptCount=await this.c('payments').countDocuments({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']}},{session});
    const attempts=await this.c('payments').find({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1}}).sort({expires:-1}).limit(50).toArray();
    const payments=attempts.map(row=>({id:row._id,amount:row.amount,currency:'INR',status:row.status==='refund_required'?'refund_required':'pending',reference:row.paymentId}));

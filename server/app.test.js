@@ -92,3 +92,12 @@ test('production requires the configured HTTPS origin and disables demo bookings
  const config=await call('/api/payments/config');assert.deepEqual(config.data,{mode:'disabled',enabled:false});
  const health=await call('/api/health');assert.equal(health.status,200);assert.match(health.headers.get('content-security-policy'),/object-src 'none'/);assert.equal(health.headers.get('strict-transport-security'),'max-age=31536000');assert.equal(health.headers.get('referrer-policy'),'no-referrer');
 });
+test('SMS retry is admin-only, checks booking existence and never exposes provider configuration',async()=>{
+ let retries=0,kicks=0;const smsService={status:()=>({configured:true,apiKey:'PRIVATE_KEY',deviceId:'PRIVATE_DEVICE',adminTo:'PRIVATE_PHONE'}),kick:()=>{kicks++;},retry:()=>{retries++;}};
+ const {call}=await fixture({smsService});const created=await call('/api/bookings',{method:'POST',body:input()});assert.equal(kicks,1);
+ const path='/api/admin/bookings/'+created.data.booking.id+'/sms/retry';assert.equal((await call(path,{method:'POST',body:{}})).status,401);
+ const login=await call('/api/admin/login',{method:'POST',body:{username:'admin',password:'a-long-test-password'}});
+ assert.equal((await call(path,{method:'POST',body:{},cookie:login.cookie})).status,200);assert.equal(retries,1);
+ assert.equal((await call('/api/admin/bookings/NTC-000000000000/sms/retry',{method:'POST',body:{},cookie:login.cookie})).status,404);
+ const dashboard=await call('/api/admin/bookings',{cookie:login.cookie});assert.deepEqual(dashboard.data.smsService,{configured:true});assert.ok(!JSON.stringify(dashboard.data).includes('PRIVATE_'));
+});

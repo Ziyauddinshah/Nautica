@@ -1,3 +1,4 @@
+import {smsStatusText} from '../lib/smsStatus.js';
 import useBackgroundRefresh from '../hooks/useBackgroundRefresh.js';
 import LanguageSwitcher, { useI18n } from "../i18n/I18nProvider.jsx";
 import { useEffect, useState } from 'react';
@@ -123,11 +124,11 @@ export default function AdminDashboard() {
       setBusy(false);
     }
   }
-  async function retryEmails(record) {
+  async function retryEmails(record,channel='email') {
     setBusy(true);
     setError('');
     try {
-      await request(`/api/admin/bookings/${record.id}/emails/retry`, {
+      await request(`/api/admin/bookings/${record.id}/${channel==='sms'?'sms':'emails'}/retry`, {
         method: 'POST',
         body: {}
       });
@@ -156,7 +157,7 @@ export default function AdminDashboard() {
             v1: t(data.bookings.length)
           })}</p>
         {data.paymentAttention?.length>0&&<section className="admin-detail"><h2>{t('Payment issues requiring attention')}</h2><p>{t('Payment received; refund required. Contact the customer and issue a refund through Razorpay Dashboard.')}</p>{data.paymentAttention.map(payment=><p key={payment.id}>{payment.name} · {payment.email} · {payment.phone}<br/>{payment.paymentId} · {N.money(payment.amount,'INR',locale)}</p>)}</section>}
-        <div className="admin-table-wrap"><table className="admin-table"><caption>{t("Booked seats and passenger records")}</caption><thead><tr>{['Booking', 'Passenger', 'Boat / pier', 'Trip', 'Seats', 'Payment', 'Email', 'Details'].map(title => <th scope="col" key={title}>{t(title)}</th>)}</tr></thead><tbody>{data.bookings.map(record => <tr key={record.id}><td><strong>{record.id}</strong><small>{t(record.status)}<br />{t(new Date(record.createdAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))}</small></td><td>{record.customer.name}<small>{record.customer.email}<br />{record.customer.phone}</small></td><td>{t(record.boat.name)}<small>{t(record.boat.type)}<br />{t(record.boat.pier)}</small></td><td>{t(record.trip.date)}<small>{t(record.trip.slot)}<br />{t(record.trip.guests)} {t("guests")}</small></td><td>{t(record.trip.seats.join(', '))}</td><td>{t(N.money(record.payment.amount, 'INR', locale))}<small>{t(record.payment.method)}<br />{t(record.payment.status)}</small></td><td><NotificationStatus notifications={record.notifications} /></td><td><button className="outline" onClick={() => setSelected(record)} aria-label={t("View booking {{v0}}", {
+        <div className="admin-table-wrap"><table className="admin-table"><caption>{t("Booked seats and passenger records")}</caption><thead><tr>{['Booking', 'Passenger', 'Boat / pier', 'Trip', 'Seats', 'Payment', 'Notifications', 'Details'].map(title => <th scope="col" key={title}>{t(title)}</th>)}</tr></thead><tbody>{data.bookings.map(record => <tr key={record.id}><td><strong>{record.id}</strong><small>{t(record.status)}<br />{t(new Date(record.createdAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))}</small></td><td>{record.customer.name}<small>{record.customer.email}<br />{record.customer.phone}</small></td><td>{t(record.boat.name)}<small>{t(record.boat.type)}<br />{t(record.boat.pier)}</small></td><td>{t(record.trip.date)}<small>{t(record.trip.slot)}<br />{t(record.trip.guests)} {t("guests")}</small></td><td>{t(record.trip.seats.join(', '))}</td><td>{t(N.money(record.payment.amount, 'INR', locale))}<small>{t(record.payment.method)}<br />{t(record.payment.status)}</small></td><td><NotificationStatus notifications={record.notifications} /></td><td><button className="outline" onClick={() => setSelected(record)} aria-label={t("View booking {{v0}}", {
                     v0: record.id
                   })}>{t("View details")}</button></td></tr>)}</tbody></table>{!loading && !data.bookings.length && <p className="empty">{t("No bookings match these filters.")}</p>}</div>
         <div className="admin-pagination"><button className="outline" disabled={offset === 0 || loading} onClick={() => setOffset(value => Math.max(0, value - 50))}>{t("Previous")}</button><span>{t("Page")} {t(Math.floor(offset / 50) + 1)}</span><button className="outline" disabled={offset + 50 >= data.total || loading} onClick={() => setOffset(value => value + 50)}>{t("Next")}</button></div>
@@ -188,7 +189,8 @@ export default function AdminDashboard() {
               Created: selected.createdAt,
               'Add-ons': N.extras.filter(extra => selected.extras.includes(extra.id)).map(extra => extra.name).join(', ')
             }} /></div>
-          <section className="admin-email-detail"><h3>{t("Confirmation emails")}</h3><NotificationStatus notifications={selected.notifications} />{selected.notifications?.some(item => item.status === 'failed') && <button className="outline" disabled={busy || !data.emailService?.configured} onClick={() => retryEmails(selected)}>{t("Retry failed emails")}</button>}<p className="demo-note">{t("Customer and admin messages are tracked separately. Failed sends retry automatically up to five times; sent messages are not resent by this button.")}</p></section>
+          <section className="admin-email-detail"><h3>{t("Confirmation emails")}</h3><NotificationStatus notifications={selected.notifications?.filter(item=>item.channel!=='sms')} />{selected.notifications?.some(item => item.channel!=='sms'&&item.status === 'failed') && <button className="outline" disabled={busy || !data.emailService?.configured} onClick={() => retryEmails(selected)}>{t("Retry failed emails")}</button>}<p className="demo-note">{t("Customer and admin messages are tracked separately. Failed sends retry automatically up to five times; sent messages are not resent by this button.")}</p></section>
+          <section className="admin-email-detail"><h3>{t('SMS confirmations')}</h3><NotificationStatus notifications={selected.notifications?.filter(item=>item.channel==='sms')}/>{selected.notifications?.some(item=>item.channel==='sms'&&item.retryable)&&<button className="outline" disabled={busy||!data.smsService?.configured} onClick={()=>retryEmails(selected,'sms')}>{t('Retry rejected SMS')}</button>}<p className="demo-note">{t('Accepted does not mean delivered. Unknown sends are not automatically resent; check provider history before retrying.')}</p></section>
           <h3>{t("Seat manifest \xB7")} {t(selected.boat.name)}</h3><p className="subtitle">{t(selected.trip.date)} · {t(selected.trip.slot)}{t(". Select a booked seat to view its passenger\u2019s booking.")}</p><div className="admin-manifest">{N.seatLayout(selected.boat).map(seat => {
               const owner = manifest.find(record => record.trip.seats.includes(seat.id));
               return <button key={seat.id} className={`manifest-seat ${owner ? 'occupied' : ''} ${owner?.id === selected.id ? 'current' : ''}`} disabled={!owner} aria-label={t("Seat {{v0}}, {{v1}}", {
@@ -222,7 +224,7 @@ function NotificationStatus({
     locale
   } = useI18n();
   if (!notifications?.length) return <small>{t("Not queued (older booking)")}</small>;
-  return <div className="email-status">{notifications.map(item => <div key={item.audience}><strong>{item.audience === 'customer' ? t('Customer') : t('Admin')}: {item.status === 'sent' ? t('Sent') : t(item.status)}</strong><small>{t("Attempts:")} {t(item.attempts)}{item.sentAt ? t(" \xB7 {{v0}}", {
+  return <div className="email-status">{notifications.map(item => <div key={(item.channel||'email')+':'+item.audience}><strong>{item.channel==='sms'?t(item.audience==='customer'?'Customer SMS':'Admin SMS'):item.audience === 'customer' ? t('Customer') : t('Admin')}: {item.channel==='sms'?t(smsStatusText(item.status)):item.status === 'sent' ? t('Sent') : t(item.status)}</strong><small>{t("Attempts:")} {t(item.attempts)}{item.sentAt ? t(" \xB7 {{v0}}", {
           v0: t(new Date(item.sentAt).toLocaleString(locale === "hi" ? "hi-IN" : "en-IN"))
         }) : ''}</small></div>)}</div>;
 }

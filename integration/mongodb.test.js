@@ -186,3 +186,32 @@ test('new bookings atomically save one linked payment and historical backfill is
  assert.equal(await a.c('outbox').countDocuments({}),outboxCount);assert.equal(JSON.stringify(await a.c('inventory').findOne({})),seatSnapshot);assert.equal((await b.userPayments(user.id)).total,1);
  await a.c('payments').updateOne({bookingId:pass.id},{$set:{status:'refunded'}});await backfillPaymentRecords(b);assert.equal((await b.userPayments(user.id)).payments[0].status,'refunded');assert.equal((await b.userBooking(user.id,pass.id)).payment.status,'refunded');assert.equal((await b.userBookings(user.id)).bookings[0].payment.status,'refunded');assert.equal((await b.adminBookings({})).bookings[0].payment.status,'refunded');
 });
+test('SMS jobs commit with bookings once, remain separate from email and coordinate worker sends across replicas',async()=>{
+ const {MongoSmsStore}=await import('../server/repositories/mongo-sms.js');const {createSmsService}=await import('../server/services/sms.js');
+ const {a,b}=await fixture();a.smsEnabled=true;a.smsAdminEnabled=true;b.smsEnabled=true;b.smsAdminEnabled=true;
+ const user=(await a.registerUser(account())).user,input=booking(user),passes=await Promise.all([a.createBooking(input,'seats',user),b.createBooking(input,'seats',user)]);
+ assert.equal(passes[0].id,passes[1].id);assert.equal(await a.c('sms_outbox').countDocuments({}),2);assert.equal(await a.c('outbox').countDocuments({}),2);
+ const sent=[],gateway={enabled:true,config:{countryCode:'91',adminTo:'+919999999999',deviceId:'a'.repeat(24)},send:async(recipient,message)=>{sent.push({recipient,message});return {batchId:(sent.length===1?'b':'c').repeat(24)};},status:async()=>({status:'delivered'})};
+ const sa=createSmsService(new MongoSmsStore(a),gateway),sb=createSmsService(new MongoSmsStore(b),gateway);await Promise.all([sa.drain(),sb.drain()]);
+ assert.equal(sent.length,2);assert.equal(await a.c('sms_outbox').countDocuments({status:'accepted'}),2);assert.equal(await a.c('outbox').countDocuments({status:'pending'}),2);
+ await a.c('sms_outbox').updateMany({},{$set:{nextPollAt:0}});await Promise.all([sa.drain(),sb.drain()]);assert.equal(await b.c('sms_outbox').countDocuments({status:'delivered'}),2);assert.equal(sent.length,2);
+ const view=await b.userBooking(user.id,passes[0].id);assert.equal(view.notifications.filter(item=>item.channel==='sms').length,1);assert.ok(!JSON.stringify(view).includes('batchId'));assert.ok(!JSON.stringify(view).includes('deviceId'));assert.ok(!JSON.stringify(view).includes('leaseToken'));
+ await sa.stop();await sb.stop();
+});
+test('SMS unknown outcomes and expired leases do not resend, and stale workers cannot acknowledge reclaimed jobs',async()=>{
+ const {MongoSmsStore}=await import('../server/repositories/mongo-sms.js');const {createSmsService}=await import('../server/services/sms.js');const {SmsError}=await import('../server/services/textbee.js');
+ const {a,b}=await fixture();a.smsEnabled=true;const user=(await a.registerUser(account())).user,pass=await a.createBooking(booking(user),'seats',user);
+ let calls=0;const gateway={enabled:true,config:{countryCode:'91'},send:async()=>{calls++;throw new SmsError('SMS_REQUEST_UNKNOWN',{unknown:true});}};
+ const worker=createSmsService(new MongoSmsStore(a),gateway);await worker.drain();await worker.drain();assert.equal(calls,1);assert.equal((await a.c('sms_outbox').findOne({bookingId:pass.id})).status,'unknown');
+ await a.c('sms_outbox').updateMany({},{$set:{status:'pending',attempts:0,nextAttemptAt:0}});const storeA=new MongoSmsStore(a),storeB=new MongoSmsStore(b),job=await storeA.claim();await a.c('sms_outbox').updateOne({_id:job._id},{$set:{leaseUntil:0}});assert.equal(await storeB.claim(),null);assert.equal((await storeA.accepted(job,'+919876543210','b'.repeat(24),'a'.repeat(24))).matchedCount,0);
+ await storeB.retry(pass.id);assert.equal((await a.c('sms_outbox').findOne({_id:job._id})).status,'unknown');await worker.stop();
+});
+test('SMS rate-limit rejections retry with a bounded budget and never resend an accepted batch',async()=>{
+ const {MongoSmsStore}=await import('../server/repositories/mongo-sms.js');const {createSmsService}=await import('../server/services/sms.js');const {SmsError}=await import('../server/services/textbee.js');
+ const {a}=await fixture();a.smsEnabled=true;const user=(await a.registerUser(account())).user,pass=await a.createBooking(booking(user),'seats',user);let calls=0,limited=true;
+ const gateway={enabled:true,config:{countryCode:'91',deviceId:'a'.repeat(24)},send:async()=>{calls++;if(limited)throw new SmsError('SMS_RATE_LIMITED',{retryable:true});return {batchId:'b'.repeat(24)};}};
+ const worker=createSmsService(new MongoSmsStore(a),gateway);
+ for(let index=0;index<3;index++){await a.c('sms_outbox').updateMany({},{$set:{nextAttemptAt:0}});await worker.drain();}
+ assert.equal(calls,3);assert.equal((await a.c('sms_outbox').findOne({bookingId:pass.id})).status,'failed');await worker.drain();assert.equal(calls,3);
+ limited=false;await worker.retry(pass.id);await worker.drain();assert.equal(calls,4);assert.equal((await a.c('sms_outbox').findOne({bookingId:pass.id})).status,'accepted');await worker.retry(pass.id);await worker.drain();assert.equal(calls,4);await worker.stop();
+});

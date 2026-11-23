@@ -30,6 +30,7 @@ export async function createMongoIndexes(db){
   bookings:[[{requestKey:1},{unique:true}],[{userId:1,createdAt:-1},{}],[{'trip.date':1,'boat.id':1,'trip.slot':1},{}]],
   payments:[[{bookingId:1},{unique:true,partialFilterExpression:{bookingId:{$type:'string'}}}],[{requestKey:1},{unique:true}],[{orderId:1},{unique:true,sparse:true}],[{paymentId:1},{unique:true,sparse:true}],[{userId:1,expires:-1},{}]],
   outbox:[[{status:1,nextAttemptAt:1,leaseUntil:1},{}],[{bookingId:1},{}]],
+  sms_outbox:[[{bookingId:1},{}],[{status:1,nextAttemptAt:1,nextPollAt:1},{}]],
   limits:[[{expiresAt:1},{expireAfterSeconds:0}]],
  };
  for(const [name,indexes] of Object.entries(specs))for(const [keys,options] of indexes)await db.collection(name).createIndex(keys,options);

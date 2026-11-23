@@ -35,7 +35,7 @@ export default function BoardingPass({
   return <>
     {confirmed && <div className="success-icon" aria-hidden="true">✓</div>}
     <p className="steps">{confirmed ? t('03 / READY TO SET SAIL') : t('YOUR SAVED VOYAGE')}</p><h2 id="flow-title" className="dialog-title">{confirmed ? t('Booking confirmed.') : t('Your boarding pass.')}</h2><p className="subtitle">{t("View your pass here or download it for your trip.")}</p>
-    {booking.emailStatus === 'requested' && <p className="demo-note">{t("Your booking is confirmed. Please check your email for confirmation.")}</p>}
+    {booking.emailStatus === 'requested' && <p className="demo-note">{t("Your booking is confirmed. View email and SMS status in My account.")}</p>}
     {!booking.serverConfirmed && <p className="demo-note">{t("This older demo pass may need confirmation before use.")}</p>}
     <div className="ticket"><div className="ticket-head"><strong>{t("\u2693 NAUTICA")}</strong><span>{t("DIGITAL BOARDING PASS")}</span></div><div className="ticket-main"><p className="eyebrow">{booking.id}</p><h3>{booking.name}</h3>
       <div className="ticket-grid">{fields.map(([label, value]) => <div key={label}><small>{t(label)}</small><strong>{t(value)}</strong></div>)}<div className="ticket-seats"><small>{t("SEAT NUMBERS")}</small><strong>{t(seatText(boat, booking.seats))}</strong></div></div>
