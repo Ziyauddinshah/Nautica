@@ -202,3 +202,5 @@ status, without passwords, reset links, API credentials or full payment referenc
 API keys, device IDs, admin destinations and raw provider responses are excluded
 from browser APIs. Both English and Hindi are supported. SMS is for booking
 notifications; password reset continues to use the existing email workflow.
+
+Boat owners can register vessels at `/owner`; admins review them at `/admin/fleet`. Only approved boats with valid documents are bookable. See [boat registration and India/Varanasi review policy](FLEET_REGISTRATION.md), including private document scanning, upgrade steps and historical booking handling.

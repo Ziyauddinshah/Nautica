@@ -41,7 +41,7 @@ export default function BookingDialog({
   const [refreshKey, setRefreshKey] = useState(0);
   const requestKey = useRef(crypto.randomUUID());
   const alive = useRef(true);
-  const boat = trip && N.boats.find(item => item.id === trip.boatId);
+  const boat = trip && (flow.boat || trip.boat || N.boats.find(item => item.id === trip.boatId));
   const processing = stage === 'processing';
   useEffect(() => {
     alive.current = true;
@@ -208,7 +208,7 @@ export default function BookingDialog({
       {stage === 'passes' && <><p className="steps">{t("YOUR JOURNEYS")}</p><h2 id="flow-title" className="dialog-title">{t("My boarding passes.")}</h2><p className="subtitle">{t("Your signed-in account bookings. Download passes for offline access.")}</p><div className="pass-list">{passes.length ? passes.map(pass => <button key={pass.id} className="saved-pass" onClick={() => {
             setActivePass(pass);
             setStage('pass');
-          }}><strong>{t(N.boats.find(boat => boat.id === pass.boatId).name)}</strong><small>{t(pass.date)} · {t(pass.slot)}<br />{pass.id} · {t(pass.guests)} {t("guests \xB7")} {t(N.money(pass.total, currency, locale))}</small></button>) : <div className="empty"><h3>{t("Your horizon is waiting.")}</h3><p>{t("Your first boarding pass will appear here after booking.")}</p></div>}</div></>}
+          }}><strong>{t((pass.boat || N.boats.find(boat => boat.id === pass.boatId))?.name || pass.boatId)}</strong><small>{t(pass.date)} · {t(pass.slot)}<br />{pass.id} · {t(pass.guests)} {t("guests \xB7")} {t(N.money(pass.total, currency, locale))}</small></button>) : <div className="empty"><h3>{t("Your horizon is waiting.")}</h3><p>{t("Your first boarding pass will appear here after booking.")}</p></div>}</div></>}
       {(stage === 'confirmed' || stage === 'pass') && <BoardingPass booking={activePass} currency={currency} confirmed={stage === 'confirmed'} onExplore={close} />}
     </div>
   </dialog>;

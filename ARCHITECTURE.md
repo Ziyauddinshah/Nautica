@@ -124,3 +124,5 @@ for configuration, message segmentation, Android-phone operation and limits.
 Before restoring a MongoDB backup, reconcile TextBee sends since that backup
 before restarting SMS workers: a restored pending job may have been sent after
 the snapshot. Database restoration cannot roll back carrier side effects.
+
+Fleet registration uses shared `boats`, `boat_documents` and `boat_audit` collections. Owner/admin mutations and audits are transactional with optimistic revisions; new checkouts/confirmations write a boat fence in their inventory transaction to serialize against edits/suspension. Public catalogue responses contain only approved public fields. Private file bytes remain in MongoDB with authorized attachment downloads; production scanning fails closed. See FLEET_REGISTRATION.md for operational controls.

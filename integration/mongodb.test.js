@@ -1,3 +1,5 @@
+import {boatDocumentTypes,fleetChecks} from '../src/domain/fleet.js';
+import {boats as fixtureBoats} from '../src/domain/booking.js';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHmac} from 'node:crypto';
@@ -32,6 +34,8 @@ async function fixture(){
  const database='nautica_test_'+randomUUID().replaceAll('-','');
  const env={MONGODB_URI:uri,MONGODB_DB:database};
  const first=await connectMongo(env,{initialize:true});await createMongoIndexes(first.db);await first.db.collection('metadata').insertOne({_id:'schema',version:1,state:'ready',instanceId:randomUUID()});
+ // Explicit test fixtures only: runtime never imports sample boats into the registry.
+ await first.db.collection('boats').insertMany(fixtureBoats.map(boat=>({_id:boat.id,status:'approved',revision:1,registrationKey:'test:'+boat.id,details:boat,documents:Object.fromEntries(boatDocumentTypes.map(type=>[type.id,{expiresOn:'2099-12-31',scanStatus:'clean'}]))})));
  const second=await connectMongo(env);const a=new MongoRepository(first),b=new MongoRepository(second);
  resources.push(async()=>{await a.db.dropDatabase();await a.close();await b.close();});return {a,b,env};
 }
@@ -118,7 +122,7 @@ test('read-only SQLite migration preserves accounts, hashes, ownership, seats, p
  try{
   const result=await runCLI(process.execPath,['scripts/migrate-sqlite.js',filename],{env,encoding:'utf8',cwd:resolve('.'),timeout:30000});assert.equal(result.status,0,result.stderr);
   const connection=await connectMongo(env),repo=new MongoRepository(connection);
-  try{const importedPayment=await repo.c('payments').findOne({bookingId:pass.id});assert.equal(importedPayment.status,'demo_paid');assert.equal(importedPayment.verification,'demo');assert.equal((await repo.loginUser(input)).user.id,user.id);assert.equal((await repo.userBookings(user.id)).bookings[0].id,pass.id);assert.deepEqual((await repo.availability(booking(user))).bookedSeats,['01']);assert.equal(await repo.c('outbox').countDocuments({}),2);assert.equal((await repo.loginAdmin('admin','admin-test-passphrase')).username,'admin');await repo.db.dropDatabase();}finally{await repo.close();}
+  try{const importedPayment=await repo.c('payments').findOne({bookingId:pass.id});assert.equal(importedPayment.status,'demo_paid');assert.equal(importedPayment.verification,'demo');assert.equal((await repo.loginUser(input)).user.id,user.id);assert.equal((await repo.userBookings(user.id)).bookings[0].id,pass.id);await assert.rejects(repo.availability(booking(user)),{status:409});assert.deepEqual((await repo.userBookings(user.id)).bookings[0].trip.seats,['01']);assert.equal(await repo.c('outbox').countDocuments({}),2);assert.equal((await repo.loginAdmin('admin','admin-test-passphrase')).username,'admin');await repo.db.dropDatabase();}finally{await repo.close();}
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
 test('an uncertain commit retries the commit without rerunning the business callback',async()=>{
@@ -214,4 +218,86 @@ test('SMS rate-limit rejections retry with a bounded budget and never resend an 
  for(let index=0;index<3;index++){await a.c('sms_outbox').updateMany({},{$set:{nextAttemptAt:0}});await worker.drain();}
  assert.equal(calls,3);assert.equal((await a.c('sms_outbox').findOne({bookingId:pass.id})).status,'failed');await worker.drain();assert.equal(calls,3);
  limited=false;await worker.retry(pass.id);await worker.drain();assert.equal(calls,4);assert.equal((await a.c('sms_outbox').findOne({bookingId:pass.id})).status,'accepted');await worker.retry(pass.id);await worker.drain();assert.equal(calls,4);await worker.stop();
+});
+
+const fleetDetails=(patch={})=>({name:'Verified Ganga boat',operatorName:'Private Owner Name',registrationNumber:'UP-'+randomUUID().slice(0,8),registrationAuthority:'Varanasi issuing authority',description:'Registered passenger boat for a Ganga journey.',boardingInstructions:'Meet the captain at the designated Assi boarding point.',type:'Wooden boat',propulsion:'manual',pier:'Assi Ghat',capacity:6,fare:120000,lifeJackets:7,captainIncluded:true,amenities:['Life jackets'],...patch});
+const fleetReview={action:'approve',notes:'Verified originals and authority references independently.',checks:Object.fromEntries(fleetChecks.map(([key])=>[key,true]))};
+const pdf=Buffer.from('%PDF-1.4\nTest private document\n%%EOF');
+async function documented(repo,actor,details=fleetDetails()){
+ let boat=await repo.fleet.create(actor,details);
+ for(const type of boatDocumentTypes)boat=await repo.fleet.upload(boat.id,actor,{revision:boat.revision,category:type.id,number:'PRIVATE-'+type.id,issuer:'Verified authority',issuedOn:'2025-01-01',expiresOn:'2099-12-31',mime:'application/pdf',data:pdf.toString('base64')});
+ return boat;
+}
+test('boat registry enforces ownership, complete documentation, independent admin review and durable private files',async()=>{
+ const {a,b}=await fixture();await a.c('boats').deleteMany({});
+ const user=(await a.registerUser(account())).user,actor={role:'owner',id:user.id},stranger={role:'owner',id:'stranger'},reviewer={role:'admin',id:'independent-reviewer'};
+ assert.deepEqual((await a.fleet.catalog()).boats,[]);
+ const draft=await a.fleet.create(actor,fleetDetails());
+ await assert.rejects(a.fleet.create(actor,draft.details),{status:409});
+ await assert.rejects(a.fleet.submit(draft.id,actor,{revision:1,declaration:true}),{status:400});
+ await assert.rejects(b.fleet.detail(draft.id,stranger),{status:404});
+ await assert.rejects(b.fleet.upload(draft.id,stranger,{revision:1}),{status:404});
+ await assert.rejects(a.fleet.update(draft.id,actor,{revision:0,details:draft.details}),{status:409});
+ let boat=await documented(a,actor);
+ const doc=boat.documents.registration;
+ assert.deepEqual((await b.fleet.download(boat.id,doc.id,actor)).bytes,pdf);
+ await assert.rejects(b.fleet.download(boat.id,doc.id,stranger),{status:404});
+ boat=await b.fleet.submit(boat.id,actor,{revision:boat.revision,declaration:true});
+ assert.equal((await a.fleet.catalog()).boats.length,0);
+ await assert.rejects(a.createBooking(booking(user,{boatId:boat.id}),'seats',user),{status:409});
+ await assert.rejects(a.fleet.review(boat.id,actor,{...fleetReview,revision:boat.revision}),{status:403});
+ await assert.rejects(a.fleet.review(boat.id,reviewer,{...fleetReview,checks:{},revision:boat.revision}),{status:400});
+ boat=await a.fleet.review(boat.id,reviewer,{...fleetReview,revision:boat.revision});
+ const catalog=await b.fleet.catalog();assert.equal(catalog.boats[0].id,boat.id);assert.equal(catalog.boats[0].seatPlan.length,6);
+ for(const privateValue of ['PRIVATE-','Private Owner','registrationNumber','"documents":','ownerId','"review":'])assert.ok(!JSON.stringify(catalog).includes(privateValue),privateValue);
+ const pass=await b.createBooking(booking(user,{boatId:boat.id}),'seats',user);assert.equal(pass.boat.name,boat.details.name);
+ await assert.rejects(a.fleet.update(boat.id,actor,{revision:boat.revision,details:boat.details}),{status:409});
+ boat=await a.fleet.review(boat.id,reviewer,{action:'suspend',revision:boat.revision,notes:'Operations suspended pending authority reinspection.'});
+ assert.equal((await b.fleet.catalog()).boats.length,0);
+ await assert.rejects(b.createBooking(booking(user,{boatId:boat.id,seats:['02']}),'seats',user),{status:409});
+ assert.equal((await b.userBooking(user.id,pass.id)).pass.boat.name,boat.details.name);
+ assert.ok((await a.fleet.detail(boat.id,actor)).audit.some(event=>event.action==='approve'));
+ // Idempotent recovery remains available after suspension.
+ const stored=await a.c('bookings').findOne({_id:pass.id});assert.equal((await b.createBooking(booking(user,{boatId:boat.id,requestKey:stored.requestKey}),'seats',user)).id,pass.id);
+});
+test('admin-created submissions require another administrator; expired documents and travel beyond validity are blocked',async()=>{
+ const {a,b}=await fixture(),maker={role:'admin',id:'maker'},checker={role:'admin',id:'checker'};
+ let boat=await documented(a,maker);boat=await a.fleet.submit(boat.id,maker,{revision:boat.revision,declaration:true});
+ await assert.rejects(b.fleet.review(boat.id,maker,{...fleetReview,revision:boat.revision}),{status:403});
+ boat=await b.fleet.review(boat.id,checker,{...fleetReview,revision:boat.revision});
+ await a.c('boats').updateOne({_id:boat.id},{$set:{'documents.insurance.expiresOn':'2020-01-01'}});
+ assert.ok(!(await b.fleet.catalog()).boats.some(item=>item.id===boat.id));await assert.rejects(b.fleet.bookable(boat.id,'2030-01-01'),{status:409});
+ await a.c('boats').updateOne({_id:boat.id},{$set:{'documents.insurance.expiresOn':'2027-01-01'}});
+ await assert.rejects(b.fleet.bookable(boat.id,'2027-01-02'),{status:409});
+});
+test('a captured payment after fleet suspension enters refund attention instead of creating a booking',async()=>{
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user,actor={role:'owner',id:user.id},reviewer={role:'admin',id:'reviewer'};
+ let boat=await documented(a,actor);boat=await a.fleet.submit(boat.id,actor,{revision:boat.revision,declaration:true});boat=await a.fleet.review(boat.id,reviewer,{...fleetReview,revision:boat.revision});
+ const {gateway}=gatewayFixture(),payments=createPaymentService(new MongoPaymentStore(a),gateway),input=booking(user,{boatId:boat.id}),order=await payments.order(input,user);
+ await assert.rejects(b.fleet.update(boat.id,actor,{revision:boat.revision,details:boat.details}),{status:409});
+ await b.fleet.review(boat.id,reviewer,{action:'suspend',revision:boat.revision,notes:'Safety concern requires suspension now.'});
+ await assert.rejects(payments.verify({attemptId:order.attemptId,orderId:order.orderId,paymentId:'pay_1',signature:sign(order.orderId+'|pay_1')},user),{status:409});
+ assert.equal((await b.c('payments').findOne({_id:order.attemptId})).status,'refund_required');assert.equal(await b.c('bookings').countDocuments({}),0);
+ assert.equal((await b.userPayments(user.id)).payments[0].boat.name,boat.details.name);
+});
+test('fleet HTTP routes protect documents, roles and same-origin writes',async()=>{
+ const {a}=await fixture(),user=(await a.registerUser(account())),actor={role:'owner',id:user.user.id};
+ const boat=await documented(a,actor),server=createApp(null,{repository:a});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const origin='http://127.0.0.1:'+server.address().port,path='/api/owner/boats/'+boat.id,headers={Cookie:'nautica_user='+user.token};
+ try{
+  assert.equal((await fetch(origin+path)).status,401);
+  assert.equal((await fetch(origin+'/api/admin/fleet',{headers})).status,401);
+  const docPath=path+'/documents/'+boat.documents.registration.id;
+  assert.equal((await fetch(origin+docPath)).status,401);
+  const response=await fetch(origin+docPath,{headers});assert.equal(response.status,200);assert.match(response.headers.get('content-disposition'),/^attachment/);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await response.arrayBuffer()),pdf);
+  const forged=await fetch(origin+path+'/review',{method:'POST',headers:{...headers,Origin:origin,'Content-Type':'application/json','X-Nautica-Request':'1'},body:JSON.stringify({...fleetReview,revision:boat.revision,role:'admin'})});assert.equal(forged.status,403);
+  const cross=await fetch(origin+path+'/submit',{method:'POST',headers:{...headers,Origin:'https://evil.test','Content-Type':'application/json','X-Nautica-Request':'1'},body:'{}'});assert.equal(cross.status,403);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('a concurrent owner edit and booking cannot both commit against the same approval',async()=>{
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user,actor={role:'owner',id:user.id},reviewer={role:'admin',id:'checker'};
+ let boat=await documented(a,actor);boat=await a.fleet.submit(boat.id,actor,{revision:boat.revision,declaration:true});boat=await a.fleet.review(boat.id,reviewer,{...fleetReview,revision:boat.revision});
+ const outcomes=await Promise.allSettled([a.createBooking(booking(user,{boatId:boat.id}),'seats',user),b.fleet.update(boat.id,actor,{revision:boat.revision,details:{...boat.details,name:'Updated registered boat'}})]);
+ assert.equal(outcomes.filter(result=>result.status==='fulfilled').length,1);assert.equal(outcomes.find(result=>result.status==='rejected').reason.status,409);
+ const saved=await b.fleet.detail(boat.id,actor),booked=await a.c('bookings').countDocuments({'boat.id':boat.id});assert.equal(saved.status,booked?'approved':'draft');
 });

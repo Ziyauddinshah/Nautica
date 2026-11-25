@@ -22,6 +22,6 @@ export function historyCounts(records,now=new Date()){
 }
 export function paymentRow(record,source='booking'){
  if(source==='booking')return {id:record.id,bookingId:record.id,source,boat:record.boat?{id:record.boat.id,name:record.boat.name,pier:record.boat.pier}:null,trip:record.trip?{date:record.trip.date,slot:record.trip.slot,seats:record.trip.seats}:null,amount:record.payment?.amount??record.pricing?.total??record.pass?.total??0,currency:'INR',status:record.payment?.status||'unknown',method:record.payment?.method||'Status unavailable',reference:record.payment?.reference||null,createdAt:record.payment?.paidAt||record.createdAt};
- const boat=boats.find(boat=>boat.id===record.payload?.boatId);
+ const boat=record.boat||boats.find(boat=>boat.id===record.payload?.boatId);
  return {id:record._id||record.id,bookingId:null,source,boat:boat?{id:boat.id,name:boat.name,pier:boat.pier}:null,trip:record.payload?{date:record.payload.date,slot:record.payload.slot,seats:record.payload.seats}:null,amount:record.amount,currency:'INR',status:record.status==='refund_required'?'refund_required':record.status==='failed'?'failed':'pending',method:'Razorpay',reference:record.paymentId||null,createdAt:new Date(record.expires-900000).toISOString()};
 }

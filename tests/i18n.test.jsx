@@ -9,7 +9,7 @@ test('every initial UI phrase has a Hindi translation and interpolation preserve
  expect(translate('Seat {{v0}}, {{v1}}',{v0:'01',v1:'booked'},'hi')).toContain('01');
 });
 test('language switch persists Hindi and translated filters keep stable English values',async()=>{
- render(<I18nProvider><App/></I18nProvider>);
+ render(<I18nProvider><App/></I18nProvider>);await screen.findAllByRole('article');
  fireEvent.change(screen.getByRole('combobox',{name:'Language'}),{target:{value:'hi'}});
  await waitFor(()=>expect(document.documentElement.lang).toBe('hi'));
  expect(localStorage.getItem('nautica.language')).toBe('hi');

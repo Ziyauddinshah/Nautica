@@ -126,3 +126,5 @@ usage, latency, expired leases, failed emails and captured payments without
 bookings. Synchronize clocks. Keep logs private and exclude credentials, reset
 links, SMTP bodies, full customer payloads and provider secrets. Shut down replicas
 gracefully and test failover/restore procedures before expanding capacity.
+
+- Complete [fleet registration and authority review](FLEET_REGISTRATION.md) for every real boat. Verify the India/Varanasi policy with competent local authorities, including applicability to manual boats. Deploy approval enforcement to all replicas, configure a private updated ClamAV service, and reconcile upcoming legacy/sample bookings before reopening sales. Document uploads do not grant legal permission.

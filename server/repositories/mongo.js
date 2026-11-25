@@ -1,3 +1,4 @@
+import {BoatRegistry} from '../fleet/repository.js';
 import {saveBookingPayment} from './payment-records.js';
 import {historyView,journeyEndExpression,paymentRow} from '../domain/history.js';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -14,7 +15,7 @@ const conflict=booked=>new ApiError(409,'Some seats were just booked. Choose dif
 const tripKey=input=>[input.boatId,input.date,input.slot].join('|');
 const offsetOf=query=>Math.max(0,Math.min(1000000,parseInt(query.offset)||0));
 export class MongoRepository{
- constructor(connection){Object.assign(this,connection);this.kind='mongodb';}
+ constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.fleet=new BoatRegistry(this);}
  c(name){return this.db.collection(name);}
  async transaction(work){
   const session=this.client.startSession(),deadline=Date.now()+10000;
@@ -143,17 +144,18 @@ export class MongoRepository{
   return this.c('inventory').findOneAndUpdate({_id:tripKey(input)},{$inc:{version:1},$currentDate:{touchedAt:true},$setOnInsert:{boatId:input.boatId,date:input.date,slot:input.slot,occupied:{}}},{upsert:true,returnDocument:'after',session});
  }
  async availability(input){
-  const boat=tripInfo(input),trip=await this.c('inventory').findOne({_id:tripKey(input)},{readConcern:{level:'linearizable'},maxTimeMS:5000}),bookedSeats=this.occupied(trip);
+  const boat=tripInfo(input,[await this.fleet.bookable(input.boatId,input.date)]),trip=await this.c('inventory').findOne({_id:tripKey(input)},{readConcern:{level:'linearizable'},maxTimeMS:5000}),bookedSeats=this.occupied(trip);
   return {boatId:boat.id,date:input.date,slot:input.slot,bookedSeats,remaining:boat.capacity-bookedSeats.length};
  }
  async createBooking(input,mode='seats',user,receipt=null,session=null){
   if(!session)return this.transaction(tx=>this.createBooking(input,mode,user,receipt,tx));
-  const prepared=validateBooking(input,user);
   const existing=await this.c('bookings').findOne({requestKey:input.requestKey},{session});
+  const boat=existing?.boat||await this.fleet.bookable(input.boatId,input.date,session);
+  const prepared=validateBooking(input,user,[boat]);
   if(existing){if(existing.userId!==user?.id||existing.requestHash!==prepared.hash)throw new ApiError(409,'This booking request was already used with different details.');return existing.pass;}
   const trip=await this.lockTrip(input,session),booked=this.occupied(trip,receipt?.attemptId,trip.touchedAt.getTime());
   if((mode==='private'&&booked.length)||prepared.seats.some(id=>booked.includes(id)))throw conflict(booked);
-  const record=buildBookingRecord(input,mode,user,receipt);
+  const record=buildBookingRecord(input,mode,user,receipt,[boat]);
   const reserved=mode==='private'?seatLayout(prepared.boat).map(seat=>seat.id):prepared.seats;
   for(const seat of reserved)trip.occupied[seat]={bookingId:record.id};
   await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});

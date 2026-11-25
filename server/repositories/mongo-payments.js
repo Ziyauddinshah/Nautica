@@ -9,8 +9,9 @@ export class MongoPaymentStore{
  c(name){return this.repo.c(name);}
  async owned(id,user){if(typeof id!=='string')throw new ApiError(404,'Payment not found.');const row=await this.c('payments').findOne({_id:id,userId:user.id});if(!row)throw new ApiError(404,'Payment not found.');return row;}
  async reserve(input,user,mode){
-  const payload=safeCheckoutPayload(input,user.email),prepared=validateBooking(payload,user),id=randomUUID(),repo=this.repo;
+  const payload=safeCheckoutPayload(input,user.email),id=randomUUID(),repo=this.repo;
   return repo.transaction(async session=>{
+   const boat=await repo.fleet.bookable(payload.boatId,payload.date,session),prepared=validateBooking(payload,user,[boat]);
    if(await this.c('bookings').findOne({requestKey:input.requestKey},{session}))throw new ApiError(409,'This booking request was already used with different details.');
    const existing=await this.c('payments').findOne({requestKey:input.requestKey},{session});
    if(existing){
@@ -23,7 +24,7 @@ export class MongoPaymentStore{
    const seats=mode==='private'?seatLayout(prepared.boat).map(seat=>seat.id):prepared.seats;
    for(const seat of seats)trip.occupied[seat]={attemptId:id,expires};
    await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});
-   const row={_id:id,userId:user.id,requestKey:input.requestKey,requestHash:prepared.hash,payload,amount:amounts(prepared.boat,prepared.extras).total,currency:'INR',provider:'Razorpay',method:'Razorpay',createdAt:trip.touchedAt.toISOString(),updatedAt:trip.touchedAt.toISOString(),status:'creating',expires};
+   const row={_id:id,userId:user.id,requestKey:input.requestKey,requestHash:prepared.hash,payload,boat:{id:prepared.boat.id,name:prepared.boat.name,pier:prepared.boat.pier},amount:amounts(prepared.boat,prepared.extras).total,currency:'INR',provider:'Razorpay',method:'Razorpay',createdAt:trip.touchedAt.toISOString(),updatedAt:trip.touchedAt.toISOString(),status:'creating',expires};
    await this.c('payments').insertOne(row,{session});return {row,existing:false};
   });
  }
@@ -41,7 +42,7 @@ export class MongoPaymentStore{
    const current=await this.c('payments').findOne({_id:row._id},{session});
    if(current.status==='paid')return (await this.c('bookings').findOne({_id:current.bookingId},{session})).pass;
    if(current.status==='refund_required')throw new ApiError(409,refundMessage);
-   const user=await this.c('users').findOne({_id:current.userId},{session});if(!user)throw new ApiError(409,'Booking owner no longer exists.');const prepared=validateBooking(current.payload,user);
+   const user=await this.c('users').findOne({_id:current.userId},{session});if(!user)throw new ApiError(409,'Booking owner no longer exists.');const prepared=validateBooking(current.payload,user,[await repo.fleet.bookable(current.payload.boatId,current.payload.date,session)]);
    if(amounts(prepared.boat,prepared.extras).total!==current.amount)throw new ApiError(409,'The fare changed before confirmation.');
    return repo.createBooking(current.payload,mode,user,{attemptId:current._id,paymentId,provider},session);
   });}catch(error){

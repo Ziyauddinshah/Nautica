@@ -18,7 +18,7 @@ async function finishPayment() { await act(async () => { await new Promise(resol
 describe('React booking flow', () => {
   it('filters the fleet and enforces one selected seat per guest', async () => {
     render(<App/>);
-    expect(screen.getAllByRole('article')).toHaveLength(8);
+    expect(await screen.findAllByRole('article')).toHaveLength(8);
     fireEvent.change(screen.getByLabelText('BOARDING PIER'), { target: { value: 'Assi Ghat' } });
     expect(screen.getAllByRole('article')).toHaveLength(2);
     await screen.findByRole('link',{name:'My account'});

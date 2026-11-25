@@ -15,7 +15,7 @@ export default function BoardingPass({
     locale
   } = useI18n();
   const [notice, setNotice] = useState('');
-  const boat = boats.find(item => item.id === booking.boatId);
+  const boat = booking.boat || boats.find(item => item.id === booking.boatId);
   const fields = [['VESSEL', boat.name], ['BOARDING PIER', boat.pier], ['DATE', booking.date], ['DEPARTURE', booking.slot], ['GUESTS', `${booking.guests} ${t("passengers")}`], ['TOTAL PAID', money(booking.total, currency, locale)]];
   async function share() {
     try {

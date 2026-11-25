@@ -3,7 +3,7 @@ import * as N from '../domain/booking.js';
 import { boardingQrPayload } from '../domain/boardingPass.js';
 import { qrSvg } from './qr.js';
 const escapeHtml=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function passFile(p,currency,locale='en'){const t=value=>translate(value,{},locale);const b=N.boats.find(b=>b.id===p.boatId),qr=qrSvg(boardingQrPayload(p)),svgBytes=new TextEncoder().encode(qr),qrData='data:image/svg+xml;base64,'+btoa(Array.from(svgBytes,c=>String.fromCharCode(c)).join(''));
+export function passFile(p,currency,locale='en'){const t=value=>translate(value,{},locale);const b=p.boat||N.boats.find(b=>b.id===p.boatId),qr=qrSvg(boardingQrPayload(p)),svgBytes=new TextEncoder().encode(qr),qrData='data:image/svg+xml;base64,'+btoa(Array.from(svgBytes,c=>String.fromCharCode(c)).join(''));
 const seatIds=N.seatText(b,p.seats).split(', '),seatLines=[];for(let i=0;i<seatIds.length;i+=12)seatLines.push((i?t('Seats (cont.): '):t('Seats:')+' ')+seatIds.slice(i,i+12).join(', '));
 const text=[p.id,p.name,t(b.name),t(b.pier),p.date,t(p.slot),`${p.guests} ${t("guests")} · ${N.money(p.total,currency,locale)}`,p.method,...seatLines,...N.extras.filter(e=>p.extras.includes(e.id)).map(e=>t(e.name))];
 // Estimate glyph width so larger text and long names stay within the printable ticket.

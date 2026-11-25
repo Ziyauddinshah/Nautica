@@ -24,6 +24,9 @@ export async function connectMongo(env=process.env,{initialize=false}={}){
 }
 export async function createMongoIndexes(db){
  const specs={
+  boats:[[{registrationKey:1},{unique:true}],[{ownerId:1,createdAt:-1},{}],[{status:1},{}]],
+  boat_documents:[[{boatId:1},{}]],
+  boat_audit:[[{boatId:1,at:-1},{}]],
   users:[[{email:1},{unique:true}]],
   sessions:[[{expiresAt:1},{expireAfterSeconds:0}],[{userId:1},{}]],
   resets:[[{expiresAt:1},{expireAfterSeconds:0}],[{userId:1},{}]],

@@ -1,3 +1,4 @@
+import {fleetRequest} from './fleet/http.js';
 import http from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
 import {projectRoot} from './database-path.js';
@@ -31,10 +32,12 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
           const allowed = origin && (origin === publicOrigin || (!production && origin === `http://${req.headers.host}`) || (!production && ['http://localhost:3000','http://127.0.0.1:3000'].includes(origin)));
           if (!allowed || req.headers['x-nautica-request'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) throw new ApiError(403,'Request origin could not be verified.');
         }
-        const body = async () => {
-          let data='';for await (const chunk of req){data+=chunk;if(Buffer.byteLength(data)>16384)throw new ApiError(413,'Request is too large.');}
+        const body = async (limit=16384) => {
+          let data='';for await (const chunk of req){data+=chunk;if(Buffer.byteLength(data)>limit)throw new ApiError(413,'Request is too large.');}
           try{return JSON.parse(data);}catch{throw new ApiError(400,'Invalid JSON request.');}
         };
+        if(req.method==='GET'&&url.pathname==='/api/boats')return send(200,repo.fleet?await repo.fleet.catalog():{boats:[]});
+        if(url.pathname.startsWith('/api/owner/boats')){const user=await repo.authenticateUser(userToken(req));if(await fleetRequest({req,res,url,repo,actor:{role:'owner',id:user.id},body,send,throttle}))return;}
         if(req.method==='GET'&&url.pathname==='/api/health'){await repo.health();return send(200,{ok:true});}
         if(req.method==='GET'&&url.pathname==='/api/payments/config')return send(200,{mode:paymentMode,enabled:paymentMode==='demo'||(paymentMode==='razorpay'&&Boolean(payments?.enabled))});
         if(req.method==='POST'&&['/api/payments/order','/api/payments/verify'].includes(url.pathname)){const user=await repo.authenticateUser(userToken(req));if(paymentMode!=='razorpay'||!payments?.enabled)throw new ApiError(503,'Online booking is currently unavailable.');await throttle(req,'checkout',user.id);const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');if(url.pathname.endsWith('/order'))return send(201,await payments.order({...input,language},user));const booking=await payments.verify(input,user);emailService?.kick();smsService?.kick();return send(200,{booking:passView(booking)});}
@@ -81,6 +84,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         }
         if(url.pathname.startsWith('/api/admin/')){
           const username=await repo.authenticateAdmin(token(req));
+          if(url.pathname.startsWith('/api/admin/fleet')&&await fleetRequest({req,res,url,repo,actor:{role:'admin',id:username},body,send,throttle}))return;
           if(req.method==='GET'&&url.pathname==='/api/admin/payment-attention')return send(200,{payments:(await payments?.attention())||[]});
           if(req.method==='GET'&&url.pathname==='/api/admin/session')return send(200,{username});
           if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=await repo.adminBookings(Object.fromEntries(url.searchParams));return send(200,{...data,paymentAttention:(await payments?.attention())||[],bookings:await Promise.all(data.bookings.map(async record=>bookingView(record,{admin:true,notifications:await repo.notificationsFor(record.id)}))),emailService:emailServiceView(emailService),smsService:{configured:smsService?.status().configured===true}});}
@@ -95,12 +99,12 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
       if(!['GET','HEAD'].includes(req.method))throw new ApiError(405,'Method not allowed.');
       const base=resolve(projectRoot,'dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
       if(path!==base&&!path.startsWith(base+sep))throw new ApiError(404,'Not found.');
-      const filename=['/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
+      const filename=['/owner','/owner/','/admin/fleet','/admin/fleet/','/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
       let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Page not found.');}
       const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff'};
       res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Cache-Control':extname(filename)==='.html'?'no-cache':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
     } catch(error) { if(!res.headersSent)send(error instanceof ApiError?error.status:repo.kind==='mongodb'&&error.name?.startsWith('Mongo')?503:500,{error:!(error instanceof ApiError)||error.status>=500?'Something went wrong. Please try again later.':error.status===403?'This request could not be completed. Refresh the page and try again.':error.message,...(error instanceof ApiError&&error.status===409&&Array.isArray(error.details.bookedSeats)?{bookedSeats:error.details.bookedSeats.filter(seat=>typeof seat==='string'&&/^\d{2}$/.test(seat))}:{})}); }
   });
-  server.requestTimeout=15000;
+  server.requestTimeout=60000;
   return server;
 }

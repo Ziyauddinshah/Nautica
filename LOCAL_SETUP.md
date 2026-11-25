@@ -62,3 +62,7 @@ See [SHARED_DATA.md](SHARED_DATA.md) for SQLite migration and shared online data
 [COMMERCIAL_LAUNCH.md](COMMERCIAL_LAUNCH.md) for live deployment. Graphical browser,
 printing, QR scanning and real payment/email delivery still need manual acceptance
 on the target environment.
+
+### Boat registration
+
+Visit `/owner` after signing in to register a real boat. Admin review is at `/admin/fleet`. The initial public catalogue is empty until a documented boat is approved; historical bookings remain available. For documents, local testing allows unscanned files, while production requires a private ClamAV service (`CLAMAV_HOST`, `CLAMAV_PORT`). See [FLEET_REGISTRATION.md](FLEET_REGISTRATION.md) for the India/Varanasi checklist and setup/upgrade requirements. No Android SDK is needed to run this web portal.

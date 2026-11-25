@@ -1,3 +1,4 @@
+import {boats as catalogBoats} from '../src/domain/booking.js';
 import React from 'react';
 import { test,expect,vi } from 'vitest';
 import { render,screen,fireEvent,waitFor,act } from '@testing-library/react';
@@ -17,6 +18,7 @@ test('registration sends account fields, checks password confirmation, and does 
 });
 test('guests must sign in before booking and the intended trip resumes after login',async()=>{
  let signed=false;vi.mocked(fetch).mockImplementation(async(path)=>{
+  if(path==='/api/boats')return json({boats:catalogBoats});
   if(path==='/api/payments/config')return json({mode:'demo',enabled:true});
   if(path==='/api/user/session')return signed?json({user}):json({error:'Sign in'},401);
   if(path==='/api/user/login'){signed=true;return json({user});}
