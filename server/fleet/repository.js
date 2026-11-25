@@ -1,3 +1,4 @@
+import { enqueueNotice } from '../aftercare/notices.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { ApiError } from '../errors.js';
 import { indiaDate, boatDetails, registrationKey, documentMetadata, documentBytes, completeDocuments, publicBoat, privateBoat, approvalChecks } from './domain.js';
@@ -79,6 +80,7 @@ export class BoatRegistry {
         ownerId: actor.role === 'owner' ? actor.id : null,
         createdBy: actorKey(actor),
         status: 'draft',
+        language: input.language === 'hi' ? 'hi' : 'en',
         revision: 1,
         details,
         registrationKey: registrationKey(details),
@@ -225,6 +227,7 @@ export class BoatRegistry {
       if (!['draft', 'rejected', 'approved', 'suspended'].includes(boat.status)) throw new ApiError(409, 'Withdraw a pending submission before editing.');
       await this.repo.verification.require(boat.ownerId, session);
       await this.mutable(boat, session);
+      if (Object.keys(boat.pendingDocuments || {}).length) throw new ApiError(409, 'Review pending document renewals before editing boat details.');
       const details = boatDetails(input.details);
       if (registrationKey(details) !== boat.registrationKey) throw new ApiError(409, 'Registration identity cannot be changed. Contact an administrator.');
       boat.details = details;
@@ -254,6 +257,7 @@ export class BoatRegistry {
     const initial = await this.load(id, actor);
     this.checkRevision(initial, input.revision);
     if (actor.role === 'admin' && initial.createdBy !== actorKey(actor)) throw new ApiError(403, 'Only the submitting owner or admin may upload documents.');
+    if (initial.status === 'approved' && input.declaration !== true) throw new ApiError(400, 'Accept the authenticity declaration for document renewal.');
     const metadata = documentMetadata(input),
       file = documentBytes(input),
       scanStatus = await this.scan(file.bytes),
@@ -265,7 +269,8 @@ export class BoatRegistry {
       if (actor.role === 'admin' && boat.createdBy !== actorKey(actor)) throw new ApiError(403, 'Only the submitting owner or admin may upload documents.');
       if (!['draft', 'rejected', 'approved', 'suspended'].includes(boat.status)) throw new ApiError(409, 'Withdraw a pending submission before changing documents.');
       await this.repo.verification.require(boat.ownerId, session);
-      await this.mutable(boat, session);
+      const renewal = boat.status === 'approved';
+      if (!renewal) await this.mutable(boat, session);
       const stored = await this.c('boat_documents').aggregate([{
         $match: {
           boatId: id
@@ -299,7 +304,7 @@ export class BoatRegistry {
       }, {
         session
       });
-      boat.documents[metadata.category] = {
+      const nextDocument = {
         ...metadata,
         id: documentId,
         mime: file.mime,
@@ -307,17 +312,27 @@ export class BoatRegistry {
         sha256,
         scanStatus
       };
-      boat.status = 'draft';
+      if (renewal) boat.pendingDocuments = {
+        ...(boat.pendingDocuments || {}),
+        [metadata.category]: {
+          ...nextDocument,
+          uploadedBy: actorKey(actor)
+        }
+      };else {
+        boat.documents[metadata.category] = nextDocument;
+        boat.status = 'draft';
+        boat.review = null;
+      }
       boat.revision++;
-      boat.review = null;
       await this.c('boats').updateOne({
         _id: id
       }, {
         $set: {
           documents: boat.documents,
-          status: 'draft',
+          pendingDocuments: boat.pendingDocuments || {},
+          status: boat.status,
           revision: boat.revision,
-          review: null
+          review: boat.review || null
         },
         $inc: {
           bookingFence: 1
@@ -325,11 +340,117 @@ export class BoatRegistry {
       }, {
         session
       });
-      await this.audit(boat, actor, 'document_uploaded', session, {
+      await this.audit(boat, actor, renewal ? 'document_renewal_uploaded' : 'document_uploaded', session, {
         category: metadata.category,
         documentId,
         sha256
       });
+      return privateBoat(boat, actor);
+    });
+  }
+  async reviewRenewals(id, actor, input) {
+    if (actor.role !== 'admin') throw new ApiError(403, 'Administrator access required.');
+    if (!['approve', 'reject'].includes(input.action) || typeof input.notes !== 'string' || input.notes.trim().length < 10 || input.notes.length > 2000) throw new ApiError(400, 'Choose a review action and enter a reason.');
+    return this.repo.transaction(async session => {
+      const boat = await this.load(id, actor, session);
+      this.checkRevision(boat, input.revision);
+      const pending = boat.pendingDocuments || {};
+      if (!Object.keys(pending).length) throw new ApiError(409, 'No document renewals are awaiting review.');
+      if (input.action === 'approve') {
+        if (boat.status !== 'approved') throw new ApiError(409, 'Only approved boats can publish document renewals.');
+        if (Object.values(pending).some(doc => doc.uploadedBy === actorKey(actor))) throw new ApiError(403, 'A different administrator must review this submission.');
+        await this.repo.verification.require(boat.ownerId, session);
+        approvalChecks(input);
+        const merged = {
+          ...boat.documents
+        };
+        for (const [category, document] of Object.entries(pending)) {
+          if (boat.documents[category]?.expiresOn && document.expiresOn && document.expiresOn < boat.documents[category].expiresOn) throw new ApiError(409, 'A renewal cannot shorten an approved document validity.');
+          const clean = {
+            ...document
+          };
+          delete clean.uploadedBy;
+          merged[category] = clean;
+        }
+        const latestBooking = await this.c('bookings').find({
+          'boat.id': id,
+          status: 'confirmed'
+        }, {
+          session
+        }).sort({
+          'trip.date': -1
+        }).limit(1).next();
+        const latestHold = await this.c('payments').find({
+          'payload.boatId': id,
+          status: {
+            $in: ['creating', 'creation_unknown', 'created']
+          },
+          expires: {
+            $gt: Date.now()
+          }
+        }, {
+          session
+        }).sort({
+          'payload.date': -1
+        }).limit(1).next();
+        const date = [indiaDate(), latestBooking?.trip.date, latestHold?.payload.date].filter(Boolean).sort().at(-1);
+        if (!completeDocuments({
+          ...boat,
+          documents: merged
+        }, date, this.production)) throw new ApiError(409, 'Renewal documents must cover all confirmed journeys and active checkouts.');
+        boat.documents = merged;
+      }
+      boat.pendingDocuments = {};
+      boat.revision++;
+      boat.renewalReview = {
+        status: input.action === 'approve' ? 'approved' : 'rejected',
+        notes: input.notes.trim(),
+        at: new Date().toISOString(),
+        by: actor.id
+      };
+      await this.c('boats').updateOne({
+        _id: id
+      }, {
+        $set: {
+          documents: boat.documents,
+          pendingDocuments: {},
+          revision: boat.revision,
+          renewalReview: boat.renewalReview
+        },
+        $inc: {
+          bookingFence: 1
+        }
+      }, {
+        session
+      });
+      await this.audit(boat, actor, 'document_renewal_' + input.action, session, {
+        notes: input.notes.trim(),
+        documents: Object.values(pending).map(doc => doc.id)
+      });
+      const owner = boat.ownerId ? await this.c('users').findOne({
+        _id: boat.ownerId
+      }, {
+        session
+      }) : null;
+      await enqueueNotice(this.repo, {
+        id: 'renewal:' + id + ':' + boat.revision,
+        boatId: id,
+        notice: {
+          event: 'document_renewal_' + input.action,
+          reference: id,
+          language: boat.language,
+          heading: input.action === 'approve' ? 'Boat document renewal approved' : 'Boat document renewal declined',
+          body: 'View your boat registration for the reviewed document status and decision reason.',
+          fields: [['Vessel', boat.details.name]]
+        },
+        recipients: [...(owner ? [{
+          audience: 'owner',
+          email: owner.email,
+          phone: owner.phone
+        }] : []), {
+          audience: 'admin'
+        }]
+      }, session);
       return privateBoat(boat, actor);
     });
   }

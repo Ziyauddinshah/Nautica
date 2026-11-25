@@ -20,7 +20,7 @@ test('admin login protects the manifest, shows complete booking details, and log
  fireEvent.change(screen.getByLabelText('Admin username'),{target:{value:'admin'}});fireEvent.change(screen.getByLabelText('Admin password'),{target:{value:'wrong'}});fireEvent.click(screen.getByRole('button',{name:'Sign in as admin'}));
  expect((await screen.findByRole('alert')).textContent).toMatch(/Invalid/);
  fireEvent.change(screen.getByLabelText('Admin password'),{target:{value:'test-password-long'}});fireEvent.click(screen.getByRole('button',{name:'Sign in as admin'}));
- await screen.findByRole('button',{name:'View booking NTC-ADMIN-TEST'});expect(screen.getByRole('table').textContent).toContain('private@example.com');
+ await screen.findByRole('button',{name:'View booking NTC-ADMIN-TEST'});expect(screen.getByRole('table',{name:'Booked seats and passenger records'}).textContent).toContain('private@example.com');
  fireEvent.click(screen.getByRole('button',{name:'View booking NTC-ADMIN-TEST'}));
  await screen.findByRole('button',{name:'Seat 01, booked by Admin Visible Guest'});expect(screen.getByText('DEMO-TEST-REFERENCE')).toBeTruthy();expect(screen.getAllByText('+919876543210').length).toBeGreaterThan(0);
  expect(screen.getAllByText('Customer: failed').length).toBeGreaterThan(0);

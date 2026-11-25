@@ -70,3 +70,7 @@ Visit `/owner` after signing in to register a real boat. Admin review is at `/ad
 ### Owner verification
 
 Configure a private shared `MOBILE_OTP_SECRET` plus TextBee for real mobile codes. Aadhaar/alternative identity verification remains unavailable until you supply an authorized provider through the documented merchant bridge; no test code or client checkbox can grant real verification. Use isolated database fixtures/fake providers in automated tests, never the live production database. See [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md).
+
+### Cancellation, refunds and expiry reminders
+
+The initial cancellation cutoff is 24 hours before departure, with admin approval. The server starts shared refund/reminder workers automatically; `npm run jobs:run` is available for an external scheduler and can execute approved real refunds. Use an isolated staging database and provider test keys for testing. See [AFTERCARE.md](AFTERCARE.md) for webhook subscriptions, renewal review, reconciliation and deployment steps.

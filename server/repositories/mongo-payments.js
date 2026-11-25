@@ -24,7 +24,7 @@ export class MongoPaymentStore{
    const seats=mode==='private'?seatLayout(prepared.boat).map(seat=>seat.id):prepared.seats;
    for(const seat of seats)trip.occupied[seat]={attemptId:id,expires};
    await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});
-   const row={_id:id,userId:user.id,requestKey:input.requestKey,requestHash:prepared.hash,payload,boat:{id:prepared.boat.id,name:prepared.boat.name,pier:prepared.boat.pier},amount:amounts(prepared.boat,prepared.extras).total,currency:'INR',provider:'Razorpay',method:'Razorpay',createdAt:trip.touchedAt.toISOString(),updatedAt:trip.touchedAt.toISOString(),status:'creating',expires};
+   const row={_id:id,userId:user.id,requestKey:input.requestKey,requestHash:prepared.hash,payload,cancellationPolicy:repo.cancellations.policy,boat:{id:prepared.boat.id,name:prepared.boat.name,pier:prepared.boat.pier},amount:amounts(prepared.boat,prepared.extras).total,currency:'INR',provider:'Razorpay',method:'Razorpay',createdAt:trip.touchedAt.toISOString(),updatedAt:trip.touchedAt.toISOString(),status:'creating',expires};
    await this.c('payments').insertOne(row,{session});return {row,existing:false};
   });
  }
@@ -40,16 +40,17 @@ export class MongoPaymentStore{
   const repo=this.repo;
   try{return await repo.transaction(async session=>{
    const current=await this.c('payments').findOne({_id:row._id},{session});
-   if(current.status==='paid')return (await this.c('bookings').findOne({_id:current.bookingId},{session})).pass;
-   if(current.status==='refund_required')throw new ApiError(409,refundMessage);
+   if(current.bookingId)return (await this.c('bookings').findOne({_id:current.bookingId},{session})).pass;
+   if(current.refund||current.status==='refund_required')throw new ApiError(409,refundMessage);
    const user=await this.c('users').findOne({_id:current.userId},{session});if(!user)throw new ApiError(409,'Booking owner no longer exists.');const prepared=validateBooking(current.payload,user,[await repo.fleet.bookable(current.payload.boatId,current.payload.date,session)]);
    if(amounts(prepared.boat,prepared.extras).total!==current.amount)throw new ApiError(409,'The fare changed before confirmation.');
-   return repo.createBooking(current.payload,mode,user,{attemptId:current._id,paymentId,provider},session);
+   return repo.createBooking(current.payload,mode,user,{attemptId:current._id,paymentId,provider,cancellationPolicy:current.cancellationPolicy},session);
   });}catch(error){
    if(error instanceof ApiError&&[400,409].includes(error.status)){
     const confirmed=await repo.transaction(async session=>{
      const latest=await this.c('payments').findOne({_id:row._id},{session});
-     if(latest.status==='paid')return (await this.c('bookings').findOne({_id:latest.bookingId},{session})).pass;
+     if(latest.bookingId)return (await this.c('bookings').findOne({_id:latest.bookingId},{session})).pass;
+     if(latest.refund)return null;
      await this.c('payments').updateOne({_id:row._id,status:{$ne:'paid'}},{$set:{status:'refund_required',paymentId}},{session});return null;
     });
     if(confirmed)return confirmed;throw new ApiError(409,refundMessage);

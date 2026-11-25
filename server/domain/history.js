@@ -1,3 +1,4 @@
+import {refundView} from './refund-view.js';
 import {slots,boats} from '../../src/domain/booking.js';
 import {ApiError} from '../errors.js';
 export const slotTimes=Object.fromEntries(slots.map((slot,index)=>[slot,['05:30','09:00','17:00','19:30'][index]]));
@@ -21,7 +22,7 @@ export function historyCounts(records,now=new Date()){
  const upcoming=records.filter(record=>activeJourney(record,now)).length;return {all:records.length,upcoming,past:records.length-upcoming};
 }
 export function paymentRow(record,source='booking'){
- if(source==='booking')return {id:record.id,bookingId:record.id,source,boat:record.boat?{id:record.boat.id,name:record.boat.name,pier:record.boat.pier}:null,trip:record.trip?{date:record.trip.date,slot:record.trip.slot,seats:record.trip.seats}:null,amount:record.payment?.amount??record.pricing?.total??record.pass?.total??0,currency:'INR',status:record.payment?.status||'unknown',method:record.payment?.method||'Status unavailable',reference:record.payment?.reference||null,createdAt:record.payment?.paidAt||record.createdAt};
+ if(source==='booking')return {id:record.id,bookingId:record.id,source,boat:record.boat?{id:record.boat.id,name:record.boat.name,pier:record.boat.pier}:null,trip:record.trip?{date:record.trip.date,slot:record.trip.slot,seats:record.trip.seats}:null,amount:record.payment?.amount??record.pricing?.total??record.pass?.total??0,currency:'INR',...((record.refund||record.payment?.refund)?{refund:refundView(record.refund||record.payment.refund)}:{}),status:record.payment?.status||'unknown',method:record.payment?.method||'Status unavailable',reference:record.payment?.reference||null,createdAt:record.payment?.paidAt||record.createdAt};
  const boat=record.boat||boats.find(boat=>boat.id===record.payload?.boatId);
- return {id:record._id||record.id,bookingId:null,source,boat:boat?{id:boat.id,name:boat.name,pier:boat.pier}:null,trip:record.payload?{date:record.payload.date,slot:record.payload.slot,seats:record.payload.seats}:null,amount:record.amount,currency:'INR',status:record.status==='refund_required'?'refund_required':record.status==='failed'?'failed':'pending',method:'Razorpay',reference:record.paymentId||null,createdAt:new Date(record.expires-900000).toISOString()};
+ return {id:record._id||record.id,bookingId:null,source,boat:boat?{id:boat.id,name:boat.name,pier:boat.pier}:null,trip:record.payload?{date:record.payload.date,slot:record.payload.slot,seats:record.payload.seats}:null,amount:record.amount,currency:'INR',...(record.refund?{refund:refundView(record.refund)}:{}),status:['refund_pending','refunded','demo_refunded','refund_failed','refund_attention'].includes(record.status)?record.status:record.status==='refund_required'?'refund_required':record.status==='failed'?'failed':'pending',method:'Razorpay',reference:record.paymentId||null,createdAt:new Date(record.expires-900000).toISOString()};
 }

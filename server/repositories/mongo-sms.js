@@ -7,7 +7,8 @@ export class MongoSmsStore{
   await this.jobs.updateMany({status:'sending',$expr:{$lte:['$leaseUntil',clock]}},{$set:{status:'unknown',lastErrorCode:'SMS_SEND_UNKNOWN'},$unset:{leaseToken:''}});
   return this.jobs.findOneAndUpdate({status:'pending',attempts:{$lt:3},$expr:{$lte:['$nextAttemptAt',clock]}},[{$set:{status:'sending',leaseToken:randomUUID(),leaseUntil:{$add:[clock,120000]},attempts:{$add:['$attempts',1]}}}],{returnDocument:'after',sort:{_id:1}});
  }
- record(job){return this.repo.c('bookings').findOne({_id:job.bookingId});}
+ async record(job){if(job.kind==='notice')return this.repo.reminders.message(job,'sms');return this.repo.c('bookings').findOne({_id:job.bookingId});}
+ suppress(job){return this.jobs.updateOne(this.fence(job),{$set:{status:'suppressed'},$unset:{leaseToken:''}});}
  fence(job){return {_id:job._id,status:'sending',leaseToken:job.leaseToken};}
  accepted(job,recipient,batchId,deviceId){return this.jobs.updateOne(this.fence(job),[{$set:{status:'accepted',recipient,batchId,deviceId,acceptedAt:{$dateToString:{date:'$$NOW'}},nextPollAt:{$add:[{$toLong:'$$NOW'},60000]},polls:0}},{$unset:['leaseToken','lastErrorCode']}]);}
  fail(job,error){return this.jobs.updateOne(this.fence(job),[{$set:{status:error.unknown?'unknown':error.retryable&&job.attempts<3?'pending':'failed',lastErrorCode:error.code||'SMS_SEND_UNKNOWN',nextAttemptAt:{$add:[{$toLong:'$$NOW'},60000*job.attempts]}}},{$unset:'leaseToken'}]);}

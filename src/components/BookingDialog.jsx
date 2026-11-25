@@ -29,6 +29,7 @@ export default function BookingDialog({
   const [stage, setStage] = useState(flow.kind === 'booking' ? 'review' : flow.kind);
   const [trip, setTrip] = useState(flow.trip || null);
   const [activePass, setActivePass] = useState(flow.booking || null);
+  useEffect(()=>{const latest=passes?.find(pass=>pass.id===activePass?.id);if(latest&&latest!==activePass)setActivePass(latest);},[passes,activePass?.id]);
   const [draft, setDraft] = useState(() => ({
     ...emptyDraft(),
     name: user?.name || '',
@@ -200,7 +201,7 @@ export default function BookingDialog({
               }) : t('Included')}</span></label>)}</div>
         <PriceBreakdown boat={boat} trip={trip} currency={currency} /><button className="primary wide" onClick={proceed}>{t("Proceed to payment \xB7")} {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))} →</button><p className="demo-note">{t("Group trip fare. Your captain is included. Only your selected seats are reserved.")}</p>
       </>}
-      {stage === 'payment' && <PaymentForm paymentMode={paymentConfig?.mode} boat={boat} trip={trip} currency={currency} draft={draft} onDraft={setDraft} accountEmail={user?.email} onPay={pay} onBack={() => {
+      {stage === 'payment' && <PaymentForm cancellationPolicy={paymentConfig?.cancellationPolicy} paymentMode={paymentConfig?.mode} boat={boat} trip={trip} currency={currency} draft={draft} onDraft={setDraft} accountEmail={user?.email} onPay={pay} onBack={() => {
         setError('');
         setStage('review');
       }} error={error} />}

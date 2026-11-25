@@ -7,7 +7,7 @@ export async function fleetRequest({
   actor,
   body,
   send,
-  throttle
+  throttle,language
 }) {
   if (!repo.fleet) throw new ApiError(503, 'Boat registration requires the online database.');
   const base = actor.role === 'admin' ? '/api/admin/fleet' : '/api/owner/boats';
@@ -19,11 +19,13 @@ export async function fleetRequest({
   if (!path && req.method === 'POST') {
     await throttle(req, 'fleet-create', actor.id);
     send(201, {
-      boat: await repo.fleet.create(actor, await body())
+      boat: await repo.fleet.create(actor, {...await body(),language})
     });
     return true;
   }
-  const match = path.match(/^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review|owner)(?:\/([a-f0-9-]{36}))?)?$/);
+  const reminder=path.match(/^\/(BT-[A-F0-9]{16})\/reminders(?:\/(retry))?$/);
+  if(reminder){if(req.method==='GET'&&!reminder[2]){send(200,await repo.reminders.status(reminder[1],actor));return true;}if(req.method==='POST'&&reminder[2]){await throttle(req,'reminder-retry',actor.id);send(200,await repo.reminders.retry(reminder[1],actor));return true;}}
+  const match = path.match(/^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review|owner|renewals)(?:\/([a-f0-9-]{36}))?)?$/);
   if (!match) return false;
   const [, id, action, documentId] = match;
   if (req.method === 'GET' && action === 'documents' && documentId) {
@@ -51,6 +53,7 @@ export async function fleetRequest({
   const input = await body(action === 'documents' ? 8 * 1024 * 1024 : 16384);
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ApiError(400, 'Invalid boat request.');
   const method = {
+    renewals:'reviewRenewals',
     owner: 'assignOwner',
     documents: 'upload',
     submit: 'submit',

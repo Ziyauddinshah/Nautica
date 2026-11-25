@@ -41,6 +41,7 @@ export default function PaymentForm({
   onBack,
   error,
   accountEmail,
+  cancellationPolicy={cutoffHours:24},
   paymentMode='demo'
 }) {
   const {
@@ -99,6 +100,7 @@ export default function PaymentForm({
     onChange: event => patch(key, event.target.value)
   });
   return <>
+    <p className="demo-note">{t('Full refund for eligible requests at least {{hours}} hours before departure, subject to admin approval.',{hours:cancellationPolicy.cutoffHours})}</p>
     <p className="steps">{t("02 / CHECKOUT")}</p><h2 id="flow-title" className="dialog-title">{t("One step closer.")}</h2><p className="subtitle">{t(paymentMode==='razorpay'?'Pay securely with Razorpay. Your payment will be charged in INR.':'Demo checkout. No money will be charged.')}</p>
     <TripSummary boat={boat} trip={trip} />
     <form ref={formRef} onSubmit={submit} noValidate>

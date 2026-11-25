@@ -79,7 +79,7 @@ order creation that times out is retained as uncertain, never blindly recreated
 with the same request key. Signed notifications can recover an order association
 from the attempt ID in gateway notes. Only a fetched captured payment matching the
 order, INR currency and amount can finalize a booking. Provider retries are handled
-idempotently; refunds are still a manual operational workflow.
+idempotently. Full refunds now use explicit admin approval, a durable refund queue and provider reconciliation; see AFTERCARE.md.
 
 Email jobs use 120-second database leases, stable Message-ID values, five attempts
 and backoff. Ordinary competing workers do not send the same leased job. A crash
@@ -128,3 +128,5 @@ the snapshot. Database restoration cannot roll back carrier side effects.
 Fleet registration uses shared `boats`, `boat_documents` and `boat_audit` collections. Owner/admin mutations and audits are transactional with optimistic revisions; new checkouts/confirmations write a boat fence in their inventory transaction to serialize against edits/suspension. Public catalogue responses contain only approved public fields. Private file bytes remain in MongoDB with authorized attachment downloads; production scanning fails closed. See FLEET_REGISTRATION.md for operational controls.
 
 `OwnerVerification` stores durable identity/mobile grants in `owner_verifications` and short-lived HMAC OTP challenges in `mobile_challenges`. Verified phone updates, single-use code consumption and boat/checkout verification fences use the shared MongoDB transactions. TextBee sends happen outside transactions; only acknowledged sends enable the challenge, and uncertain sends are not retried automatically. Identity verification uses the explicit merchant bridge contract in OWNER_VERIFICATION.md; no vendor/UIDAI connection is configured by default and raw Aadhaar data is never requested by that interface.
+
+Aftercare stores cancellation policy snapshots and canonical refund summaries alongside bookings/payments. Cancellation and seat release are transactional; external refund calls use fenced leases and stable Razorpay idempotency keys outside transactions. Financial audit and notification insertion are durable. The hourly shared document scanner deduplicates version/stage reminders, while staged document renewals preserve active approval until independent review. AFTERCARE.md describes state transitions, uncertainty handling, scheduling and limitations.

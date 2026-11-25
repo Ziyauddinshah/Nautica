@@ -29,7 +29,8 @@
     "sqlite:restore": "node --env-file-if-exists=.env scripts/db-restore.js",
     "db:connect": "node --env-file-if-exists=.env scripts/db-connect.js",
     "db:backfill:payments": "node --env-file-if-exists=.env scripts/backfill-payments.js",
-    "sms:verify": "node --env-file-if-exists=.env scripts/sms-verify.js"
+    "sms:verify": "node --env-file-if-exists=.env scripts/sms-verify.js",
+    "jobs:run": "node --env-file-if-exists=.env scripts/aftercare-run.js"
   },
   "dependencies": {
     "@fontsource/noto-sans-devanagari": "^5.3.0",

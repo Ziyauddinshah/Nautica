@@ -89,6 +89,18 @@ export function privateBoat(boat, actor) {
     revision: boat.revision,
     details: boat.details,
     documents: boat.documents || {},
+    pendingDocuments: Object.fromEntries(Object.entries(boat.pendingDocuments || {}).map(([key, value]) => {
+      const doc = {
+        ...value
+      };
+      if (actor?.role !== 'admin') delete doc.uploadedBy;
+      return [key, doc];
+    })),
+    renewalReview: boat.renewalReview ? {
+      status: boat.renewalReview.status,
+      notes: boat.renewalReview.notes,
+      at: boat.renewalReview.at
+    } : null,
     createdAt: boat.createdAt,
     submittedAt: boat.submittedAt,
     review

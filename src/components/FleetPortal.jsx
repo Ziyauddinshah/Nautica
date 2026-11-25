@@ -1,3 +1,5 @@
+import DocumentRenewals from './DocumentRenewals.jsx';
+import DocumentReminders from './DocumentReminders.jsx';
 import OwnerVerification from './OwnerVerification.jsx';
 import { useEffect, useState } from 'react';
 import LanguageSwitcher, { useI18n } from '../i18n/I18nProvider.jsx';
@@ -59,6 +61,7 @@ export default function FleetPortal({
     [busy, setBusy] = useState(false),
     [notes, setNotes] = useState(''),
     [checks, setChecks] = useState({}),
+    [renewalDeclaration,setRenewalDeclaration]=useState(false),
     [declaration, setDeclaration] = useState(false),
     [upload, setUpload] = useState({
       category: 'registration',
@@ -264,7 +267,7 @@ export default function FleetPortal({
                     notes,
                     declaration: ownerAuthority
                   }));
-                }}><h3>{t('Link verified owner')}</h3><p>{t('Linking an owner pauses new bookings and requires a fresh admin review. Existing tickets remain unchanged.')}</p><label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label><label>{t('Review notes')}<textarea required minLength={10} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} /></label><label className="fleet-check"><input type="checkbox" required checked={ownerAuthority} onChange={e => setOwnerAuthority(e.target.checked)} />{t('I verified this account is authorized to operate the boat.')}</label><button disabled={busy || !ownerAuthority}>{t('Link verified owner')}</button></form>}<h3>{t('Numbered passenger seats')}</h3><div className="fleet-seat-preview">{seatLayout(boat.details).map(seat => <span key={seat.id}>{seat.id}</span>)}</div><h3>{t('Private documents')}</h3><p>{t('PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.')}</p><ul>{boatDocumentTypes.map(type => {
+                }}><h3>{t('Link verified owner')}</h3><p>{t('Linking an owner pauses new bookings and requires a fresh admin review. Existing tickets remain unchanged.')}</p><label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label><label>{t('Review notes')}<textarea required minLength={10} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} /></label><label className="fleet-check"><input type="checkbox" required checked={ownerAuthority} onChange={e => setOwnerAuthority(e.target.checked)} />{t('I verified this account is authorized to operate the boat.')}</label><button disabled={busy || !ownerAuthority}>{t('Link verified owner')}</button></form>}<h3>{t('Numbered passenger seats')}</h3><div className="fleet-seat-preview">{seatLayout(boat.details).map(seat => <span key={seat.id}>{seat.id}</span>)}</div><DocumentRenewals key={boat.id+boat.revision} boat={boat} admin={admin} onChanged={()=>select(boat)}/><DocumentReminders key={boat.id} boatId={boat.id} revision={boat.revision} admin={admin}/><h3>{t('Private documents')}</h3><p>{t('PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.')}</p><ul>{boatDocumentTypes.map(type => {
                     const document = boat.documents[type.id];
                     return <li key={type.id}>{t(type.label)}: {document ? <><a href={`${base}/${boat.id}/documents/${document.id}`}>{t('Download')}</a> · {document.number} · {document.expiresOn || t('No expiry recorded')}</> : t('Missing')}</li>;
                   })}</ul>
@@ -273,11 +276,11 @@ export default function FleetPortal({
                   run(async () => {
                     if (!file || file.size > 5 * 1024 * 1024) throw new Error('Choose a supported file up to 5 MB.');
                     await mutate('documents', {
-                      ...upload,
+                      ...upload,declaration:renewalDeclaration,
                       mime: file.type,
                       data: await readFile(file)
                     });
-                    setFile(null);
+                    setFile(null);setRenewalDeclaration(false);
                   });
                 }}>
  <label>{t('Document category')}<select value={upload.category} onChange={e => setUpload({
@@ -292,7 +295,7 @@ export default function FleetPortal({
                     }[key])}<input required={key !== 'expiresOn' || boatDocumentTypes.find(type => type.id === upload.category).expiring} type={key.endsWith('On') ? 'date' : 'text'} value={upload[key]} onChange={e => setUpload({
                       ...upload,
                       [key]: e.target.value
-                    })} /></label>)}<label>{t('Document file')}<input key={boat.revision} required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => setFile(e.target.files[0])} /></label><button disabled={busy || !file}>{t('Upload document')}</button></form>}
+                    })} /></label>)}<label>{t('Document file')}<input key={boat.revision} required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => setFile(e.target.files[0])} /></label>{boat.status==='approved'&&<label className="fleet-check"><input type="checkbox" checked={renewalDeclaration} onChange={event=>setRenewalDeclaration(event.target.checked)}/>{t('I confirm this renewal is authentic and applies to the same boat.')}</label>}<button disabled={busy || !file||(boat.status==='approved'&&!renewalDeclaration)}>{t('Upload document')}</button></form>}
  {canEdit && ['draft', 'rejected'].includes(boat.status) && <form onSubmit={e => {
                   e.preventDefault();
                   run(() => mutate('submit', {

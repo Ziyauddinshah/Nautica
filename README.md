@@ -206,3 +206,5 @@ notifications; password reset continues to use the existing email workflow.
 Boat owners can register vessels at `/owner`; admins review them at `/admin/fleet`. Only approved boats with valid documents are bookable. See [boat registration and India/Varanasi review policy](FLEET_REGISTRATION.md), including private document scanning, upgrade steps and historical booking handling.
 
 Boat owners now need verified mobile and legal identity before registration. [Owner verification setup](OWNER_VERIFICATION.md) explains TextBee OTPs and the prepared Aadhaar/alternative identity bridge. No Aadhaar provider is configured by default; this feature does not perform live Aadhaar verification until an authorized provider integration is supplied.
+
+Customers can request cancellation at least 24 hours before departure from My account. Admins approve/decline cancellations, reconcile Razorpay refunds and inspect financial audit history. Owners/admins receive staged document-expiry reminders and can submit replacements for independent renewal review. See [AFTERCARE.md](AFTERCARE.md), including webhook setup and `npm run jobs:run`.

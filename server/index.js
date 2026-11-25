@@ -1,3 +1,5 @@
+import {Refunds} from './aftercare/refunds.js';
+import {aftercareWorker} from './aftercare/worker.js';
 import {OwnerVerification} from './verification/repository.js';
 import {identityProvider} from './verification/provider.js';
 import {createTextbeeGateway} from './services/textbee.js';
@@ -22,7 +24,9 @@ repository.smsEnabled=smsGateway.enabled;repository.smsAdminEnabled=Boolean(smsG
 const smsService=createSmsService(new MongoSmsStore(repository),smsGateway);
 const emailService=createSharedEmailService(new MongoOutboxStore(repository));
 const gateway=createRazorpayGateway({keyId:process.env.RAZORPAY_KEY_ID,keySecret:process.env.RAZORPAY_KEY_SECRET,webhookSecret:process.env.RAZORPAY_WEBHOOK_SECRET});
-const payments=createPaymentService(new MongoPaymentStore(repository),gateway,{mode});
-const server=createApp(null,{repository,mode,proxyToken:process.env.NAUTICA_PROXY_TOKEN||'',emailService,smsService,...config,payments,trustedProxyIPs:(process.env.TRUSTED_PROXY_IPS||'').split(',').map(value=>value.trim()).filter(Boolean)});
-server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);console.log('Shared MongoDB storage; this replica has no local database fallback.');if(smsGateway.enabled)console.log('Booking SMS enabled; admin SMS '+(repository.smsAdminEnabled?'enabled.':'disabled until SMS_ADMIN_TO is configured.'));else if(smsGateway.config.enabled)console.log('Booking SMS configuration is incomplete. Set TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID privately.');emailService.start();smsService.start();});
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await Promise.all([emailService.stop(),smsService.stop()]);await repository.close();process.exit(0);}));
+const refunds=new Refunds(repository,gateway);
+const aftercare=aftercareWorker({refunds,reminders:repository.reminders,emailService,smsService,remindersEnabled:process.env.DOCUMENT_REMINDERS_ENABLED!=='false'});
+const payments=createPaymentService(new MongoPaymentStore(repository),gateway,{mode,refunds});
+const server=createApp(null,{repository,mode,proxyToken:process.env.NAUTICA_PROXY_TOKEN||'',emailService,smsService,...config,payments,refunds,aftercare,trustedProxyIPs:(process.env.TRUSTED_PROXY_IPS||'').split(',').map(value=>value.trim()).filter(Boolean)});
+server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);console.log('Shared MongoDB storage; this replica has no local database fallback.');if(smsGateway.enabled)console.log('Booking SMS enabled; admin SMS '+(repository.smsAdminEnabled?'enabled.':'disabled until SMS_ADMIN_TO is configured.'));else if(smsGateway.config.enabled)console.log('Booking SMS configuration is incomplete. Set TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID privately.');emailService.start();smsService.start();aftercare.start();});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await aftercare.stop();await Promise.all([emailService.stop(),smsService.stop()]);await repository.close();process.exit(0);}));

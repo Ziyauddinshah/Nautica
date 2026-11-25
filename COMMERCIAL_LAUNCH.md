@@ -109,9 +109,10 @@ concern, read from stale secondaries or accept offline bookings to hide an outag
 
 Seat holds last 15 minutes. Captured payments confirm only matching INR amounts
 and available seats. Late captures with conflicts become refund_required, visible
-to admins and the affected customer, without a boarding pass. Refunds are manual
-in Razorpay Dashboard; resolution tracking/automatic refunds and failed-booking
-refund emails are not implemented. Staff must monitor and reconcile these cases.
+in admin payment attention. Staff can approve their full refund in the application;
+the shared worker issues and reconciles Razorpay refunds with durable status and
+customer/admin notices. Unknown, historical or external partial-refund cases require
+manual review. Complete the staging and operational checks in AFTERCARE.md.
 Unknown order/commit outcomes must be investigated or retried idempotently; never
 blindly charge again after a timeout. Provider reconciliation remains necessary
 for external payments whose notification never reaches the application.
@@ -130,3 +131,5 @@ gracefully and test failover/restore procedures before expanding capacity.
 - Complete [fleet registration and authority review](FLEET_REGISTRATION.md) for every real boat. Verify the India/Varanasi policy with competent local authorities, including applicability to manual boats. Deploy approval enforcement to all replicas, configure a private updated ClamAV service, and reconcile upcoming legacy/sample bookings before reopening sales. Document uploads do not grant legal permission.
 
 - Finish authorized Aadhaar/alternative identity provider onboarding and bridge integration described in OWNER_VERIFICATION.md. Verify consent/alternative and revocation handling, protect the shared OTP secret, and exercise real mobile delivery in staging. Existing boats require verified owners; link/re-review ownerless legacy boats and reconcile active bookings/checkouts before reopening sales. The prepared bridge alone is not Aadhaar verification.
+
+- Publish the 24-hour full-refund policy and real support contacts. Test cancellation approval, inventory release, signed refund webhooks, uncertain/final-failed refunds, current boarding checks and document-renewal reminders in staging. Keep at least one worker running or schedule `npm run jobs:run`; see AFTERCARE.md.

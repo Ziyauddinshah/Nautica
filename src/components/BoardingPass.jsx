@@ -32,6 +32,8 @@ export default function BoardingPass({
       setNotice('Pass export failed. Try Print / Save as PDF.');
     }
   }
+  if(booking.bookingStatus==='cancelled')return <section role="alert"><h2>{t('Booking cancelled')}</h2><p>{t('This ticket cannot be used for boarding. Check My account for refund status.')}</p><button onClick={onExplore}>{t('Explore boats')}</button></section>;
+  if(booking.cancellationPending)return <section role="alert"><h2>{t('Cancellation under review')}</h2><p>{t('Boarding is paused until your cancellation request is reviewed or withdrawn. Your seats remain reserved.')}</p><button onClick={onExplore}>{t('Explore boats')}</button></section>;
   return <>
     {confirmed && <div className="success-icon" aria-hidden="true">✓</div>}
     <p className="steps">{confirmed ? t('03 / READY TO SET SAIL') : t('YOUR SAVED VOYAGE')}</p><h2 id="flow-title" className="dialog-title">{confirmed ? t('Booking confirmed.') : t('Your boarding pass.')}</h2><p className="subtitle">{t("View your pass here or download it for your trip.")}</p>

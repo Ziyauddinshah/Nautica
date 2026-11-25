@@ -1,3 +1,4 @@
+import {journeyEnd} from './domain/history.js';
 import {verificationRequest} from './verification/http.js';
 import {fleetRequest} from './fleet/http.js';
 import http from 'node:http';
@@ -10,7 +11,7 @@ import {createSqliteRepository} from './repositories/sqlite.js';
 import {passView,bookingView,emailServiceView} from './views.js';
 import {ApiError,digest} from './errors.js';
 
-export function createApp(db, { mode = 'seats', production = false, publicOrigin = '', emailService = null, smsService = null, paymentMode = production?'disabled':'demo', payments = null, trustedProxyIPs = [], proxyToken = '', repository = null } = {}) {
+export function createApp(db, { mode = 'seats', production = false, publicOrigin = '', emailService = null, smsService = null, paymentMode = production?'disabled':'demo', payments = null, trustedProxyIPs = [], proxyToken = '', repository = null, refunds = null, aftercare = null, clock = ()=>Date.now() } = {}) {
   const repo=repository||createSqliteRepository(db);
   const attempts = new Map(),userAttempts=new Map();
   function clientIP(req){const peer=req.socket.remoteAddress,proof=req.headers['x-nautica-proxy-token'];const verified=proxyToken.length>=32&&typeof proof==='string'&&Buffer.byteLength(proof)===Buffer.byteLength(proxyToken)&&timingSafeEqual(Buffer.from(proof),Buffer.from(proxyToken));if(!verified&&!trustedProxyIPs.includes(peer))return peer;const forwarded=req.headers['x-forwarded-for']?.split(',').at(-1)?.trim();return forwarded&&isIP(forwarded)?forwarded:peer;}
@@ -39,9 +40,9 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         };
         if(req.method==='GET'&&url.pathname==='/api/boats')return send(200,repo.fleet?await repo.fleet.catalog():{boats:[]});
         if(url.pathname.startsWith('/api/owner/verification')){const user=await repo.authenticateUser(userToken(req));return await verificationRequest({req,url,repo,user,body,send,throttle,language});}
-        if(url.pathname.startsWith('/api/owner/boats')){const user=await repo.authenticateUser(userToken(req));if(await fleetRequest({req,res,url,repo,actor:{role:'owner',id:user.id},body,send,throttle}))return;}
+        if(url.pathname.startsWith('/api/owner/boats')){const user=await repo.authenticateUser(userToken(req));if(await fleetRequest({req,res,url,repo,actor:{role:'owner',id:user.id},body,send,throttle,language}))return;}
         if(req.method==='GET'&&url.pathname==='/api/health'){await repo.health();return send(200,{ok:true});}
-        if(req.method==='GET'&&url.pathname==='/api/payments/config')return send(200,{mode:paymentMode,enabled:paymentMode==='demo'||(paymentMode==='razorpay'&&Boolean(payments?.enabled))});
+        if(req.method==='GET'&&url.pathname==='/api/payments/config')return send(200,{cancellationPolicy:repo.cancellations?.policy,mode:paymentMode,enabled:paymentMode==='demo'||(paymentMode==='razorpay'&&Boolean(payments?.enabled))});
         if(req.method==='POST'&&['/api/payments/order','/api/payments/verify'].includes(url.pathname)){const user=await repo.authenticateUser(userToken(req));if(paymentMode!=='razorpay'||!payments?.enabled)throw new ApiError(503,'Online booking is currently unavailable.');await throttle(req,'checkout',user.id);const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');if(url.pathname.endsWith('/order'))return send(201,await payments.order({...input,language},user));const booking=await payments.verify(input,user);emailService?.kick();smsService?.kick();return send(200,{booking:passView(booking)});}
         if(req.method==='GET'&&url.pathname==='/api/availability')return send(200,{...await repo.availability(Object.fromEntries(url.searchParams)),mode});
         if(req.method==='POST'&&url.pathname==='/api/bookings'){if(paymentMode!=='demo'||production)throw new ApiError(503,'Online booking is currently unavailable.');const user=await repo.authenticateUser(userToken(req));const input=await body();if(!input||typeof input!=='object')throw new ApiError(400,'Invalid booking request.');const booking=await repo.createBooking({...input,email:user.email,language},mode,user);emailService?.kick();smsService?.kick();return send(201,{booking:passView(booking)});}
@@ -66,6 +67,8 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         }
         if(url.pathname.startsWith('/api/user/')){
           const user=await repo.authenticateUser(userToken(req));
+          const cancel=url.pathname.match(/^\/api\/user\/bookings\/(NTC-[A-F0-9]{12})\/cancellation$/);
+          if(req.method==='POST'&&cancel){if(!repo.cancellations)throw new ApiError(503,'Cancellation service is unavailable.');await throttle(req,'cancellation',user.id);const input=await body();const result=await repo.cancellations[input?.action==='withdraw'?'withdraw':'request'](cancel[1],user,input);emailService?.kick();smsService?.kick();return send(200,{cancellation:result});}
           if(req.method==='GET'&&url.pathname==='/api/user/session')return send(200,{user});
           if(req.method==='GET'&&url.pathname==='/api/user/payments')return send(200,await repo.userPayments(user.id,Object.fromEntries(url.searchParams)));
           if(req.method==='GET'&&url.pathname==='/api/user/bookings')return send(200,await repo.userBookings(user.id,Object.fromEntries(url.searchParams)));
@@ -86,7 +89,16 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
         }
         if(url.pathname.startsWith('/api/admin/')){
           const username=await repo.authenticateAdmin(token(req));
-          if(url.pathname.startsWith('/api/admin/fleet')&&await fleetRequest({req,res,url,repo,actor:{role:'admin',id:username},body,send,throttle}))return;
+          if(url.pathname.startsWith('/api/admin/fleet')&&await fleetRequest({req,res,url,repo,actor:{role:'admin',id:username},body,send,throttle,language}))return;
+          const cancel=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/cancellation$/);
+          if(req.method==='POST'&&cancel){if(!repo.cancellations)throw new ApiError(503,'Cancellation service is unavailable.');await throttle(req,'cancellation-admin',username);const result=await repo.cancellations.decide(cancel[1],username,await body());aftercare?.kick();emailService?.kick();smsService?.kick();return send(200,{cancellation:result});}
+          if(req.method==='GET'&&url.pathname==='/api/admin/refunds')return send(200,{...await repo.cancellations.listRefunds(Object.fromEntries(url.searchParams)),providerConfigured:refunds?.gateway.enabled===true});
+          const refundAudit=url.pathname.match(/^\/api\/admin\/refunds\/(RF-[a-f0-9]{32})\/audit$/);if(req.method==='GET'&&refundAudit)return send(200,await repo.cancellations.auditForRefund(refundAudit[1]));
+          const refundAction=url.pathname.match(/^\/api\/admin\/refunds\/(RF-[a-f0-9]{32})\/(reconcile|retry)$/);
+          if(req.method==='POST'&&refundAction){if(!refunds)throw new ApiError(503,'Refund service is unavailable.');await throttle(req,'refund-admin',username);const result=await refunds[refundAction[2]](refundAction[1],username,await body());aftercare?.kick();return send(200,{refund:result});}
+          const failedPayment=url.pathname.match(/^\/api\/admin\/payments\/([a-zA-Z0-9_-]{1,100})\/refund$/);
+          if(req.method==='POST'&&failedPayment){await throttle(req,'refund-admin',username);const result=await repo.cancellations.refundUnbooked(failedPayment[1],username,await body());aftercare?.kick();return send(200,{refund:result});}
+          if(req.method==='POST'&&url.pathname==='/api/admin/boarding/verify'){const input=await body(),record=typeof input?.bookingId==='string'?await repo.c('bookings').findOne({_id:input.bookingId}):null;const end=record&&journeyEnd(record),now=clock();let valid=Boolean(end&&now>=+end-5400000&&now<=+end&&record&&record.status==='confirmed'&&record.cancellation?.status!=='requested'&&record.payment.status==='paid'&&record.boat.id===input.boatId&&record.trip.date===input.date&&record.trip.slot===input.slot);if(valid)try{await repo.fleet.bookable(record.boat.id,record.trip.date);}catch{valid=false;}return send(200,{valid,bookingStatus:record?.status||'not_found',seats:valid?record.trip.seats:[]});}
           if(req.method==='GET'&&url.pathname==='/api/admin/payment-attention')return send(200,{payments:(await payments?.attention())||[]});
           if(req.method==='GET'&&url.pathname==='/api/admin/session')return send(200,{username});
           if(req.method==='GET'&&url.pathname==='/api/admin/bookings'){const data=await repo.adminBookings(Object.fromEntries(url.searchParams));return send(200,{...data,paymentAttention:(await payments?.attention())||[],bookings:await Promise.all(data.bookings.map(async record=>bookingView(record,{admin:true,notifications:await repo.notificationsFor(record.id)}))),emailService:emailServiceView(emailService),smsService:{configured:smsService?.status().configured===true}});}

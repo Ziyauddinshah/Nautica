@@ -164,7 +164,7 @@ export default function App({
           kind: 'passes'
         }, event.currentTarget) : beginAuth({
           kind: 'passes'
-        }, event.currentTarget)}>{t("My passes")} <span className="count">{t(passes.filter(pass => pass.date >= N.localDate()).length)}</span></button></nav></header>
+        }, event.currentTarget)}>{t("My passes")} <span className="count">{t(passes.filter(pass => pass.date >= N.localDate()&&pass.bookingStatus!=='cancelled').length)}</span></button></nav></header>
     <main>
       <section className="hero"><div className="hero-copy"><p className="eyebrow"><span /> {t("YOUR NEXT CHAPTER, ON THE WATER")}</p><h1>{t("A different")}<br />{t("kind of")} <em>{t("escape.")}</em></h1><p className="intro">{t("Discover Varanasi from the Ganges.")}<br />{t("Find your boat. We\u2019ll take care of the rest.")}</p><div className="hero-proof"><span>{t("\u2727 Captain included")}</span><span>{t("\u2661 Curated experiences")}</span><span>{t("\u2713 Safety first")}</span></div></div><div className="hero-art" aria-label={t("Illustration of a sailboat on calm coastal water")} role="img"><BoatArt boat={N.boats[0]} /></div><div className="hero-caption"><span>{t("01 / THE OPEN WATER COLLECTION")}</span><span>{t("Made for moments that stay with you \u2197")}</span></div></section>
       <section className="search" aria-labelledby="search-title"><div className="search-heading"><h2 id="search-title">{t("Where shall we take you?")}</h2><span>{t("Your own boat. Your own pace.")}</span></div>

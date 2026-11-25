@@ -1,3 +1,4 @@
+import {noticeSms} from '../aftercare/notices.js';
 import {bookingSms} from '../domain/sms.js';
 import {smsPhone,SmsError} from './textbee.js';
 export function createSmsService(store,gateway){
@@ -9,9 +10,10 @@ export function createSmsService(store,gateway){
    const job=await store.claim();if(!job)break;
    try{
     const record=await store.record(job);
-    const recipient=smsPhone(job.audience==='admin'?gateway.config.adminTo:job.recipient,gateway.config.countryCode);
+    if(record?.suppress||(!record?.notice&&record?.status==='cancelled')){await store.suppress(job);continue;}
+    const recipient=smsPhone(job.audience==='admin'?gateway.config.adminTo:(record?.recipientOverride||job.recipient),gateway.config.countryCode);
     if(!record||!recipient)throw new SmsError('SMS_INVALID_RECIPIENT');
-    const result=await gateway.send(recipient,bookingSms(record,job.audience));
+    const result=await gateway.send(recipient,record.notice?noticeSms(record.notice):bookingSms(record,job.audience));
     await store.accepted(job,recipient,result.batchId,gateway.config.deviceId);
    }catch(error){await store.fail(job,error instanceof SmsError?error:new SmsError('SMS_SEND_UNKNOWN',{unknown:true}));}
   }

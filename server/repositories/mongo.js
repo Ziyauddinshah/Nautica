@@ -1,3 +1,5 @@
+import {DocumentReminders} from '../aftercare/reminders.js';
+import {Cancellations} from '../aftercare/cancellations.js';
 import {OwnerVerification} from '../verification/repository.js';
 import {BoatRegistry} from '../fleet/repository.js';
 import {saveBookingPayment} from './payment-records.js';
@@ -16,7 +18,7 @@ const conflict=booked=>new ApiError(409,'Some seats were just booked. Choose dif
 const tripKey=input=>[input.boatId,input.date,input.slot].join('|');
 const offsetOf=query=>Math.max(0,Math.min(1000000,parseInt(query.offset)||0));
 export class MongoRepository{
- constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.verification=new OwnerVerification(this);this.fleet=new BoatRegistry(this);}
+ constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.cancellations=new Cancellations(this);this.reminders=new DocumentReminders(this);this.verification=new OwnerVerification(this);this.fleet=new BoatRegistry(this);}
  c(name){return this.db.collection(name);}
  async transaction(work){
   const session=this.client.startSession(),deadline=Date.now()+10000;
@@ -156,7 +158,7 @@ export class MongoRepository{
   if(existing){if(existing.userId!==user?.id||existing.requestHash!==prepared.hash)throw new ApiError(409,'This booking request was already used with different details.');return existing.pass;}
   const trip=await this.lockTrip(input,session),booked=this.occupied(trip,receipt?.attemptId,trip.touchedAt.getTime());
   if((mode==='private'&&booked.length)||prepared.seats.some(id=>booked.includes(id)))throw conflict(booked);
-  const record=buildBookingRecord(input,mode,user,receipt,[boat]);
+  const record=buildBookingRecord(input,mode,user,receipt,[boat]);record.cancellationPolicy=receipt?.cancellationPolicy||this.cancellations.policy;record.pass.bookingStatus=record.status;
   const reserved=mode==='private'?seatLayout(prepared.boat).map(seat=>seat.id):prepared.seats;
   for(const seat of reserved)trip.occupied[seat]={bookingId:record.id};
   await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});
@@ -175,11 +177,11 @@ export class MongoRepository{
   return records.map(record=>{const receipt=byBooking.get(record.id);return receipt&&receipt.userId===(record.userId||null)?{...record,payment:{...record.payment,...paymentView({...receipt.summary,...receipt})}}:record;});
  }
  async smsNotifications(ids,session){
-  const jobs=await this.c('sms_outbox').find({bookingId:{$in:ids}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,attempts:1,sentAt:1,deliveredAt:1,acceptedAt:1,batchId:1}}).toArray();
+  const jobs=await this.c('sms_outbox').find({bookingId:{$in:ids}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,event:1,attempts:1,sentAt:1,deliveredAt:1,acceptedAt:1,batchId:1}}).toArray();
   return jobs.map(job=>({...job,channel:'sms',retryable:job.status==='failed'&&!job.batchId}));
  }
  async notificationsFor(id,session){
-  const email=await this.c('outbox').find({bookingId:id},{session,projection:{_id:0,audience:1,status:1,attempts:1,sentAt:1,nextAttemptAt:1}}).sort({audience:1}).toArray();
+  const email=await this.c('outbox').find({bookingId:id},{session,projection:{_id:0,audience:1,status:1,event:1,attempts:1,sentAt:1,nextAttemptAt:1}}).sort({audience:1}).toArray();
   return [...email,...await this.smsNotifications([id],session)];
  }
  async hasBooking(id){return Boolean(await this.c('bookings').findOne({_id:id},{projection:{_id:1}}));}
@@ -201,12 +203,12 @@ export class MongoRepository{
  async userBookings(userId,query={}){
   return this.transaction(async session=>{
    const history=await this.bookingHistory(userId,query,session),bookings=[];
-   const jobs=history.records.length?await this.c('outbox').find({bookingId:{$in:history.records.map(record=>record.id)}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,sentAt:1}}).toArray():[];
+   const jobs=history.records.length?await this.c('outbox').find({bookingId:{$in:history.records.map(record=>record.id)}},{session,projection:{_id:0,bookingId:1,audience:1,status:1,event:1,sentAt:1}}).toArray():[];
    const sms=await this.smsNotifications(history.records.map(record=>record.id),session);
    for(const record of await this.withPaymentRecords(history.records,session)){const view=bookingView(record,{notifications:[...jobs.filter(job=>job.bookingId===record.id),...sms.filter(job=>job.bookingId===record.id)]});view.journeyState=record.status!=='confirmed'||!record.__ends||record.__ends<=history.now?'previous':record.__ends.getTime()-3600000<=history.now.getTime()?'in_progress':'upcoming';bookings.push(view);}
    const attemptCount=await this.c('payments').countDocuments({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']}},{session});
-   const attempts=await this.c('payments').find({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1}}).sort({expires:-1}).limit(50).toArray();
-   const payments=attempts.map(row=>({id:row._id,amount:row.amount,currency:'INR',status:row.status==='refund_required'?'refund_required':'pending',reference:row.paymentId}));
+   const attempts=await this.c('payments').find({userId,kind:{$ne:'booking_payment'},status:{$nin:['paid','demo_paid']},$or:[{expires:{$gt:history.now.getTime()}},{status:'refund_required'}]},{session,projection:{_id:1,amount:1,status:1,paymentId:1,refund:1}}).sort({expires:-1}).limit(50).toArray();
+   const payments=attempts.map(row=>({id:row._id,amount:row.amount,currency:'INR',status:['refund_required','refund_pending','refunded','refund_failed','refund_attention'].includes(row.status)?row.status:'pending',reference:row.paymentId,...(row.refund?{refund:row.refund}:{})}));
    return {bookings,payments,counts:history.counts,paymentTotal:history.counts.all+attemptCount,total:history.total,upcoming:history.counts.upcoming,offset:history.offset,limit:50};
   });
  }
@@ -219,7 +221,7 @@ export class MongoRepository{
   return {payments:result.rows.map(row=>paymentRow(row.record,row.source)),counts,total:result.count[0]?.total||0,paymentTotal:result.count[0]?.total||0,offset,limit:50};
  }
  async adminBookings(query={}){
-  const filter={};for(const [key,column]of [['boatId','boat.id'],['date','trip.date'],['slot','trip.slot']])if(query[key])filter[column]=String(query[key]);
+  const filter={};if(query.cancellation==='requested')filter['cancellation.status']='requested';if(query.cancellation==='cancelled')filter.status='cancelled';for(const [key,column]of [['boatId','boat.id'],['date','trip.date'],['slot','trip.slot']])if(query[key])filter[column]=String(query[key]);
   if(query.q){const term=String(query.q).slice(0,150).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');filter.$or=['id','customer.name','customer.email','customer.phone'].map(key=>({[key]:{$regex:term,$options:'i'}}));}
   return this.transaction(async session=>{const records=await this.c('bookings').find(filter,{session}).sort({createdAt:-1,_id:-1}).skip(offsetOf(query)).limit(50).toArray();return {bookings:await this.withPaymentRecords(records,session),total:await this.c('bookings').countDocuments(filter,{session}),offset:offsetOf(query),limit:50};});
  }

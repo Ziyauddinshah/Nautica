@@ -1,3 +1,4 @@
+import {noticeMessage} from '../aftercare/notices.js';
 import nodemailer from 'nodemailer';
 import {emailConfig,smtpOptions,confirmationMessage,passwordResetMessage} from '../email.js';
 // SMTP is replaceable; a database lease coordinates workers on every application replica.
@@ -11,9 +12,10 @@ export function createSharedEmailService(store,{config=emailConfig(),transport}=
    const job=await store.claim();if(!job)break;
    try{
     const record=await store.record(job);
-    const recipient=job.recipient||(job.audience==='admin'?config.adminTo:null);
+    if(record?.suppress||(!record?.notice&&record?.status==='cancelled')){await store.suppress(job);continue;}
+    const recipient=record?.recipientOverride||job.recipient||(job.audience==='admin'?config.adminTo:null);
     if(!record||!recipient)throw new Error('Invalid email job.');
-    const result=await mailer.sendMail(confirmationMessage(record,job.audience,config,recipient,job.messageId));
+    const result=await mailer.sendMail(record.notice?noticeMessage(record.notice,config,recipient,job.messageId):confirmationMessage(record,job.audience,config,recipient,job.messageId));
     if(!result.accepted?.some(value=>(typeof value==='string'?value:value.address)?.toLowerCase()===recipient.toLowerCase()))throw new Error('Recipient not accepted.');
     await store.succeed(job);
    }catch(error){
