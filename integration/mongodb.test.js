@@ -527,3 +527,29 @@ test('one misconfigured replica cannot have its MFA alert cleared by a healthy p
 test('alert-delivery retries remain scoped to failed operational jobs and never resend uncertain SMS',async()=>{
  const {a}=await fixture();await a.c('outbox').insertMany([{_id:'ops-failed',event:'operational_alert',status:'failed',attempts:5},{_id:'booking-failed',status:'failed',attempts:5}]);await a.c('sms_outbox').insertMany([{_id:'ops-sms-failed',event:'operational_alert',status:'failed',attempts:3},{_id:'ops-sms-unknown',event:'operational_alert',status:'unknown',attempts:1},{_id:'ops-sms-accepted',event:'operational_alert',status:'accepted',batchId:'a'.repeat(24)}]);await a.c('ops_webhooks').insertOne({_id:'ops-webhook-failed',status:'failed',attempts:5});const result=await a.ops.retryDelivery('admin');assert.equal(result.email,1);assert.equal(result.sms,1);assert.equal(result.webhook,1);assert.equal((await a.c('outbox').findOne({_id:'booking-failed'})).status,'failed');assert.equal((await a.c('sms_outbox').findOne({_id:'ops-sms-unknown'})).status,'unknown');assert.equal((await a.c('sms_outbox').findOne({_id:'ops-sms-accepted'})).status,'accepted');
 });
+
+test('small synthetic launch pilot completes five paid journeys across replicas and restores booking history and seat inventory',async()=>{
+ const {captureSnapshot,encryptSnapshot,decryptSnapshot,restoreAndVerify}=await import('../server/recovery/snapshot.js');
+ const {a,b}=await fixture(),users=await Promise.all(Array.from({length:5},()=>a.registerUser(account()).then(result=>result.user))),{gateway}=gatewayFixture();
+ const services=[a,b].map(repo=>createPaymentService(new MongoPaymentStore(repo),gateway));
+ const inputs=users.map((user,index)=>booking(user,{seats:[String(index+1).padStart(2,'0')]}));
+ const orders=await Promise.all(inputs.map((input,index)=>services[index%2].order(input,users[index])));
+ for(let index=0;index<5;index++)await assert.rejects(services[(index+1)%2].order({...inputs[index],requestKey:randomUUID()},users[(index+1)%5]),{status:409});
+ const confirmed=await Promise.all(orders.map(async(order,index)=>{
+  const paymentId='pay_'+order.orderId.split('_')[1],verification={attemptId:order.attemptId,orderId:order.orderId,paymentId,signature:sign(order.orderId+'|'+paymentId)};
+  const raw=JSON.stringify({event:'payment.captured',payload:{payment:{entity:{id:paymentId,order_id:order.orderId}}}});
+  const result=await Promise.all([services[0].verify(verification,users[index]),services[1].verify(verification,users[index]),services[1].webhook(raw,sign(raw,'test-webhook'))]);assert.equal(result[0].id,result[1].id);return result[0];
+ }));
+ assert.equal(new Set(confirmed.map(row=>row.id)).size,5);assert.equal(await a.c('bookings').countDocuments({}),5);assert.equal(await a.c('payments').countDocuments({status:'paid'}),5);
+ for(const user of users){assert.equal((await b.userBookings(user.id)).total,1);assert.equal((await b.userPayments(user.id,{})).total,1);}
+ await assert.rejects(b.userBooking(users[0].id,confirmed[1].id),{status:404});
+ const delivered=[],config={enabled:true,configured:true,user:'sender@gmail.com',adminTo:'admin@example.test',siteOrigin:'https://example.test'},transport={sendMail:async message=>{delivered.push(message.messageId);return {accepted:[message.to.address]};}};
+ const workers=[a,b].map(repo=>createSharedEmailService(new MongoOutboxStore(repo),{config,transport}));try{await Promise.all(workers.map(worker=>worker.drain()));assert.equal(delivered.length,10);assert.equal(new Set(delivered).size,10);}finally{await Promise.all(workers.map(worker=>worker.stop()));}
+ const snapshot=await captureSnapshot(a),archive=encryptSnapshot(snapshot,'ac'.repeat(32)),restoredDb=a.client.db('nautica_restore_'+randomUUID().replaceAll('-',''));
+ try{
+  await restoreAndVerify(restoredDb,decryptSnapshot(archive,'ac'.repeat(32)));
+  const restored=new MongoRepository({client:a.client,db:restoredDb,config:{...a.config,database:restoredDb.databaseName}});await restored.health();
+  for(const user of users){assert.equal((await restored.userBookings(user.id)).total,1);assert.equal((await restored.userPayments(user.id,{})).total,1);}
+  assert.deepEqual((await restored.availability(inputs[0])).bookedSeats.sort(),['01','02','03','04','05']);
+ }finally{await restoredDb.dropDatabase();}
+});

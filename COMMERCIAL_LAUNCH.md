@@ -135,3 +135,7 @@ gracefully and test failover/restore procedures before expanding capacity.
 - Publish the 24-hour full-refund policy and real support contacts. Test cancellation approval, inventory release, signed refund webhooks, uncertain/final-failed refunds, current boarding checks and document-renewal reminders in staging. Keep at least one worker running or schedule `npm run jobs:run`; see AFTERCARE.md.
 
 - Complete admin MFA rollout and backup the encryption key separately. Test operational alert delivery and configure an external uptime monitor. See ADMIN_SECURITY_OPERATIONS.md; no in-process monitor can cover every process being offline.
+
+- Run the encrypted backup restoration drill and small synthetic pilot, then complete
+  the live five-guest operator run sheet in [BACKUP_RESTORE_PILOT.md](BACKUP_RESTORE_PILOT.md).
+  A simulation does not replace an actual backup drill or controlled live acceptance.

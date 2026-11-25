@@ -31,7 +31,11 @@
     "db:backfill:payments": "node --env-file-if-exists=.env scripts/backfill-payments.js",
     "sms:verify": "node --env-file-if-exists=.env scripts/sms-verify.js",
     "jobs:run": "node --env-file-if-exists=.env scripts/aftercare-run.js",
-    "admin:mfa:reset": "node --env-file-if-exists=.env scripts/admin-mfa-reset.js"
+    "admin:mfa:reset": "node --env-file-if-exists=.env scripts/admin-mfa-reset.js",
+    "db:backup": "node --env-file-if-exists=.env scripts/mongo-backup.js",
+    "db:restore:test": "node --env-file-if-exists=.env scripts/mongo-restore-test.js",
+    "test:recovery": "node --test integration/recovery.test.js",
+    "pilot:simulate": "node scripts/pilot-simulate.js"
   },
   "dependencies": {
     "@fontsource/noto-sans-devanagari": "^5.3.0",

@@ -210,3 +210,7 @@ Boat owners now need verified mobile and legal identity before registration. [Ow
 Customers can request cancellation at least 24 hours before departure from My account. Admins approve/decline cancellations, reconcile Razorpay refunds and inspect financial audit history. Owners/admins receive staged document-expiry reminders and can submit replacements for independent renewal review. See [AFTERCARE.md](AFTERCARE.md), including webhook setup and `npm run jobs:run`.
 
 Admin sign-in now requires authenticator MFA or a single-use recovery code. Configure the private shared encryption key and explicitly authorize enrollment for existing admins before upgrading. Operational alerts are at `/admin/operations`. See [ADMIN_SECURITY_OPERATIONS.md](ADMIN_SECURITY_OPERATIONS.md) for setup, recovery and independent monitoring.
+
+Backup drills and launch pilot: [BACKUP_RESTORE_PILOT.md](BACKUP_RESTORE_PILOT.md)
+provides encrypted MongoDB backup/restore testing, `npm run pilot:simulate`, and a
+five-guest live acceptance run sheet.

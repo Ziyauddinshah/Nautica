@@ -122,3 +122,7 @@ records remain demo; imported real-payment summaries remain historical unless
 there was a verified gateway attempt. A repeated run creates no duplicates and
 stops rather than overwrite financial/ownership conflicts. New SQLite imports
 already create these records before the destination becomes ready.
+
+For a bounded small-database encrypted snapshot and an isolated automatic restore
+check, see [BACKUP_RESTORE_PILOT.md](BACKUP_RESTORE_PILOT.md). `db:backup` now targets
+MongoDB; SQLite backups remain explicitly named `sqlite:backup`.
