@@ -128,3 +128,5 @@ links, SMTP bodies, full customer payloads and provider secrets. Shut down repli
 gracefully and test failover/restore procedures before expanding capacity.
 
 - Complete [fleet registration and authority review](FLEET_REGISTRATION.md) for every real boat. Verify the India/Varanasi policy with competent local authorities, including applicability to manual boats. Deploy approval enforcement to all replicas, configure a private updated ClamAV service, and reconcile upcoming legacy/sample bookings before reopening sales. Document uploads do not grant legal permission.
+
+- Finish authorized Aadhaar/alternative identity provider onboarding and bridge integration described in OWNER_VERIFICATION.md. Verify consent/alternative and revocation handling, protect the shared OTP secret, and exercise real mobile delivery in staging. Existing boats require verified owners; link/re-review ownerless legacy boats and reconcile active bookings/checkouts before reopening sales. The prepared bridge alone is not Aadhaar verification.

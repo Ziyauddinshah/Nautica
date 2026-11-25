@@ -1,3 +1,4 @@
+import OwnerVerification from './OwnerVerification.jsx';
 import { useEffect, useState } from 'react';
 import LanguageSwitcher, { useI18n } from '../i18n/I18nProvider.jsx';
 import { AuthForm } from './AuthForm.jsx';
@@ -34,6 +35,9 @@ export default function FleetPortal({
   const {
       t
     } = useI18n(),
+    [ownerVerified, setOwnerVerified] = useState(false),
+    [ownerEmail, setOwnerEmail] = useState(''),
+    [ownerAuthority, setOwnerAuthority] = useState(false),
     [authenticated, setAuthenticated] = useState(false),
     [adminName, setAdminName] = useState(''),
     [login, setLogin] = useState({
@@ -120,7 +124,9 @@ export default function FleetPortal({
   async function mutate(action, body) {
     const result = await request(base + '/' + boat.id + (action ? '/' + action : ''), {
       method: 'POST',
-      ...(action==='documents'?{signal:AbortSignal.timeout(60000)}:{}),
+      ...(action === 'documents' ? {
+        signal: AbortSignal.timeout(60000)
+      } : {}),
       body: {
         ...body,
         revision: boat.revision
@@ -161,7 +167,8 @@ export default function FleetPortal({
             ...login,
             password: e.target.value
           })} /></label><button disabled={busy} className="primary">{t('Sign in')}</button></form> : user === undefined ? <p role="status">{t('Loading…')}</p> : <AuthForm onSuccess={onUser} message={t('Sign in to register and manage your boats.')} /> : <>
- <button disabled={busy} onClick={() => setRefresh(v => v + 1)}>{t('Refresh')}</button> <button disabled={busy} className="primary" onClick={() => {
+ {!admin && <OwnerVerification key={user.id} user={user} onStatus={setOwnerVerified} />}
+ <button disabled={busy} onClick={() => setRefresh(v => v + 1)}>{t('Refresh')}</button> <button disabled={busy || !admin && !ownerVerified} className="primary" onClick={() => {
           setCreating(true);
           setBoat(null);
           setDetails({
@@ -177,7 +184,12 @@ export default function FleetPortal({
                   if (creating) {
                     const result = await request(base, {
                       method: 'POST',
-                      body: details
+                      body: {
+                        ...details,
+                        ...(admin ? {
+                          ownerEmail
+                        } : {})
+                      }
                     });
                     setBoat(result.boat);
                     setBoats(previous => [result.boat, ...previous]);
@@ -187,6 +199,7 @@ export default function FleetPortal({
                   });
                 });
               }}>
+ {admin && creating && <label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label>}
  {field('name', 'Boat name', {
                   maxLength: 80
                 })}{field('operatorName', 'Owner / operator legal name', {
@@ -226,7 +239,7 @@ export default function FleetPortal({
                     [key]: e.target.value
                   })} /></label>)}
 
- <p>{t('A qualified captain is required. The numbered seat plan must match the actual boat and certified passenger capacity.')}</p><button className="primary" disabled={busy}>{t(creating ? 'Create draft' : 'Save details as draft')}</button></form>}
+ <p>{t('A qualified captain is required. The numbered seat plan must match the actual boat and certified passenger capacity.')}</p><button className="primary" disabled={busy || !admin && !ownerVerified}>{t(creating ? 'Create draft' : 'Save details as draft')}</button></form>}
  {boat && !editable && <dl>{Object.entries(boat.details).filter(([key]) => !['tone', 'amenities'].includes(key)).map(([key, value]) => <div key={key}><dt>{t({
                       name: 'Boat name',
                       operatorName: 'Owner / operator legal name',
@@ -244,7 +257,14 @@ export default function FleetPortal({
                       jurisdiction: 'Jurisdiction',
                       captainIncluded: 'Captain included'
                     }[key] || key)}</dt><dd>{typeof value === 'boolean' ? t(value ? 'Yes' : 'No') : t(String(value))}</dd></div>)}</dl>}
- {boat && <><h3>{t('Numbered passenger seats')}</h3><div className="fleet-seat-preview">{seatLayout(boat.details).map(seat => <span key={seat.id}>{seat.id}</span>)}</div><h3>{t('Private documents')}</h3><p>{t('PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.')}</p><ul>{boatDocumentTypes.map(type => {
+ {boat && <>{admin && !boat.ownerId && <form onSubmit={e => {
+                  e.preventDefault();
+                  run(() => mutate('owner', {
+                    ownerEmail,
+                    notes,
+                    declaration: ownerAuthority
+                  }));
+                }}><h3>{t('Link verified owner')}</h3><p>{t('Linking an owner pauses new bookings and requires a fresh admin review. Existing tickets remain unchanged.')}</p><label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label><label>{t('Review notes')}<textarea required minLength={10} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} /></label><label className="fleet-check"><input type="checkbox" required checked={ownerAuthority} onChange={e => setOwnerAuthority(e.target.checked)} />{t('I verified this account is authorized to operate the boat.')}</label><button disabled={busy || !ownerAuthority}>{t('Link verified owner')}</button></form>}<h3>{t('Numbered passenger seats')}</h3><div className="fleet-seat-preview">{seatLayout(boat.details).map(seat => <span key={seat.id}>{seat.id}</span>)}</div><h3>{t('Private documents')}</h3><p>{t('PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.')}</p><ul>{boatDocumentTypes.map(type => {
                     const document = boat.documents[type.id];
                     return <li key={type.id}>{t(type.label)}: {document ? <><a href={`${base}/${boat.id}/documents/${document.id}`}>{t('Download')}</a> · {document.number} · {document.expiresOn || t('No expiry recorded')}</> : t('Missing')}</li>;
                   })}</ul>
@@ -278,10 +298,10 @@ export default function FleetPortal({
                   run(() => mutate('submit', {
                     declaration
                   }));
-                }}><label className="fleet-check"><input type="checkbox" required checked={declaration} onChange={e => setDeclaration(e.target.checked)} />{t('I am authorized to operate this boat. Details and documents are authentic, current and match the actual boat.')}</label><button className="primary" disabled={busy || !declaration}>{t('Submit for admin review')}</button></form>}
+                }}><label className="fleet-check"><input type="checkbox" required checked={declaration} onChange={e => setDeclaration(e.target.checked)} />{t('I am authorized to operate this boat. Details and documents are authentic, current and match the actual boat.')}</label><button className="primary" disabled={busy || !declaration || !admin && !ownerVerified}>{t('Submit for admin review')}</button></form>}
  {boat.status === 'pending' && <button disabled={busy} onClick={() => run(() => mutate('withdraw', {}))}>{t('Withdraw submission')}</button>}
- {admin&&boat.status==='pending'&&boat.createdBy==='admin:'+adminName&&<p>{t('A different administrator must review this submission.')}</p>}
- {admin && ['pending', 'approved'].includes(boat.status) && (boat.status==='approved'||boat.createdBy!=='admin:'+adminName) && <form onSubmit={e => {
+ {admin && boat.status === 'pending' && boat.createdBy === 'admin:' + adminName && <p>{t('A different administrator must review this submission.')}</p>}
+ {admin && ['pending', 'approved'].includes(boat.status) && (boat.status === 'approved' || boat.createdBy !== 'admin:' + adminName) && <form onSubmit={e => {
                   e.preventDefault();
                   run(() => mutate('review', {
                     action: boat.status === 'approved' ? 'suspend' : 'approve',
@@ -295,6 +315,7 @@ export default function FleetPortal({
                     action: 'reject',
                     notes
                   }))}>{t('Reject with reason')}</button>}</form>}
+ {admin && boat.ownerVerification && <p>{t('Owner verification')}: {t(boat.ownerVerification.mobileVerified && boat.ownerVerification.identityVerified ? 'Verified' : 'Not verified')}</p>}
  {boat.review && <p>{t('Review notes')}: {boat.review.notes} {boat.review.suspensionReason}</p>}{boat.audit && <><h3>{t('Audit history')}</h3><ul>{boat.audit.map((event, index) => <li key={index}>{event.at} · {t(event.action)} · {event.revision} {admin && event.actor && <> · {event.actor}</>}</li>)}</ul></>}
  </>}
  </>}

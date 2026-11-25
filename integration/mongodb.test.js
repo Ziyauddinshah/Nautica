@@ -1,3 +1,4 @@
+import {OwnerVerification} from '../server/verification/repository.js';
 import {boatDocumentTypes,fleetChecks} from '../src/domain/fleet.js';
 import {boats as fixtureBoats} from '../src/domain/booking.js';
 import {test,before,after} from 'node:test';
@@ -35,7 +36,8 @@ async function fixture(){
  const env={MONGODB_URI:uri,MONGODB_DB:database};
  const first=await connectMongo(env,{initialize:true});await createMongoIndexes(first.db);await first.db.collection('metadata').insertOne({_id:'schema',version:1,state:'ready',instanceId:randomUUID()});
  // Explicit test fixtures only: runtime never imports sample boats into the registry.
- await first.db.collection('boats').insertMany(fixtureBoats.map(boat=>({_id:boat.id,status:'approved',revision:1,registrationKey:'test:'+boat.id,details:boat,documents:Object.fromEntries(boatDocumentTypes.map(type=>[type.id,{expiresOn:'2099-12-31',scanStatus:'clean'}]))})));
+ const fixtureOwner={_id:'fixture-owner',id:'fixture-owner',name:'Fixture Operator',phone:'+919876543210',email:'fixture-owner@example.test'};await first.db.collection('users').insertOne(fixtureOwner);await first.db.collection('owner_verifications').insertOne({_id:fixtureOwner._id,mobile:{phone:fixtureOwner.phone,expiresAt:new Date('2099-01-01')},identity:{name:fixtureOwner.name,expiresAt:new Date('2099-01-01')}});
+ await first.db.collection('boats').insertMany(fixtureBoats.map(boat=>({_id:boat.id,ownerId:'fixture-owner',status:'approved',revision:1,registrationKey:'test:'+boat.id,details:boat,documents:Object.fromEntries(boatDocumentTypes.map(type=>[type.id,{expiresOn:'2099-12-31',scanStatus:'clean'}]))})));
  const second=await connectMongo(env);const a=new MongoRepository(first),b=new MongoRepository(second);
  resources.push(async()=>{await a.db.dropDatabase();await a.close();await b.close();});return {a,b,env};
 }
@@ -224,6 +226,7 @@ const fleetDetails=(patch={})=>({name:'Verified Ganga boat',operatorName:'Privat
 const fleetReview={action:'approve',notes:'Verified originals and authority references independently.',checks:Object.fromEntries(fleetChecks.map(([key])=>[key,true]))};
 const pdf=Buffer.from('%PDF-1.4\nTest private document\n%%EOF');
 async function documented(repo,actor,details=fleetDetails()){
+ if(actor.role==='owner')await verifiedFixture(repo,actor.id);else details={...details,ownerEmail:'fixture-owner@example.test'};
  let boat=await repo.fleet.create(actor,details);
  for(const type of boatDocumentTypes)boat=await repo.fleet.upload(boat.id,actor,{revision:boat.revision,category:type.id,number:'PRIVATE-'+type.id,issuer:'Verified authority',issuedOn:'2025-01-01',expiresOn:'2099-12-31',mime:'application/pdf',data:pdf.toString('base64')});
  return boat;
@@ -232,6 +235,7 @@ test('boat registry enforces ownership, complete documentation, independent admi
  const {a,b}=await fixture();await a.c('boats').deleteMany({});
  const user=(await a.registerUser(account())).user,actor={role:'owner',id:user.id},stranger={role:'owner',id:'stranger'},reviewer={role:'admin',id:'independent-reviewer'};
  assert.deepEqual((await a.fleet.catalog()).boats,[]);
+ await verifiedFixture(a,user.id);
  const draft=await a.fleet.create(actor,fleetDetails());
  await assert.rejects(a.fleet.create(actor,draft.details),{status:409});
  await assert.rejects(a.fleet.submit(draft.id,actor,{revision:1,declaration:true}),{status:400});
@@ -300,4 +304,54 @@ test('a concurrent owner edit and booking cannot both commit against the same ap
  const outcomes=await Promise.allSettled([a.createBooking(booking(user,{boatId:boat.id}),'seats',user),b.fleet.update(boat.id,actor,{revision:boat.revision,details:{...boat.details,name:'Updated registered boat'}})]);
  assert.equal(outcomes.filter(result=>result.status==='fulfilled').length,1);assert.equal(outcomes.find(result=>result.status==='rejected').reason.status,409);
  const saved=await b.fleet.detail(boat.id,actor),booked=await a.c('bookings').countDocuments({'boat.id':boat.id});assert.equal(saved.status,booked?'approved':'draft');
+});
+
+async function verifiedFixture(repo,id){const user=await repo.c('users').findOne({_id:id});await repo.c('owner_verifications').updateOne({_id:id},{$set:{mobile:{phone:user.phone,expiresAt:new Date('2099-01-01')},identity:{name:user.name,expiresAt:new Date('2099-01-01')}}},{upsert:true});}
+test('mobile OTPs are private, bounded, single use and shared between replicas',async()=>{
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user;const messages=[];
+ const options={secret:'test-otp-secret-that-is-at-least-32-characters',sms:{enabled:true,async send(phone,message){messages.push({phone,message});}}};a.verification=new OwnerVerification(a,options);b.verification=new OwnerVerification(b,options);
+ await assert.rejects(a.fleet.create({role:'owner',id:user.id},fleetDetails()),{status:409});
+ await a.verification.sendCode(user.id,{phone:'9876543210',consent:true});assert.equal(messages[0].phone,'+919876543210');const code=messages[0].message.match(/code is (\d{6})/)[1],wrong=code==='000000'?'000001':'000000';
+ const challenge=await b.c('mobile_challenges').findOne({_id:user.id});assert.ok(!JSON.stringify(challenge).includes(code));assert.equal(challenge.attempts,0);
+ await assert.rejects(b.verification.sendCode(user.id,{phone:'9876543210',consent:true}),{status:429});
+ await assert.rejects(b.verification.verifyCode(user.id,{code:wrong}),{status:400});assert.equal((await a.c('mobile_challenges').findOne({_id:user.id})).attempts,1);
+ const results=await Promise.allSettled([a.verification.verifyCode(user.id,{code}),b.verification.verifyCode(user.id,{code})]);assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal((await b.verification.status(user.id)).mobileVerified,true);assert.equal((await b.verification.status(user.id)).identityVerified,false);
+ await assert.rejects(a.fleet.create({role:'owner',id:user.id},fleetDetails()),{status:409});
+ assert.ok(!JSON.stringify(await a.verification.status(user.id)).includes('hash'));
+});
+test('five wrong mobile codes lock a challenge; expired and delivery-unknown codes never verify',async()=>{
+ const {a}=await fixture(),user=(await a.registerUser(account())).user;let code;
+ a.verification=new OwnerVerification(a,{secret:'a-test-secret-of-at-least-32-characters',sms:{enabled:true,async send(phone,text){code=text.match(/code is (\d{6})/)[1];}}});
+ await a.verification.sendCode(user.id,{phone:user.phone,consent:true});for(let i=0;i<5;i++)await assert.rejects(a.verification.verifyCode(user.id,{code:code==='000000'?'111111':'000000'}),{status:400});await assert.rejects(a.verification.verifyCode(user.id,{code}),{status:400});
+ await a.c('mobile_challenges').updateOne({_id:user.id},{$set:{nextSendAt:0}});await a.verification.sendCode(user.id,{phone:user.phone,consent:true});await a.c('mobile_challenges').updateOne({_id:user.id},{$set:{expiresAt:new Date(0)}});await assert.rejects(a.verification.verifyCode(user.id,{code}),{status:400});
+ await a.c('mobile_challenges').updateOne({_id:user.id},{$set:{nextSendAt:0}});a.verification.sms.send=async()=>{throw new Error('private gateway detail');};await assert.rejects(a.verification.sendCode(user.id,{phone:user.phone,consent:true}),{status:503});assert.equal((await a.c('mobile_challenges').findOne({_id:user.id})).hash,undefined);
+});
+test('identity verification binds trusted results to the owner and gates registration without storing Aadhaar data',async()=>{
+ const {a,b}=await fixture(),user=(await a.registerUser(account())).user;let request,result;
+ const provider={enabled:true,async start(input){request=input;return {id:'provider_session_123',url:'https://verify.example.test/session/123'};},async result(){return result;}};
+ a.verification=new OwnerVerification(a,{provider});b.verification=new OwnerVerification(b,{provider});
+ await assert.rejects(a.verification.startIdentity(user.id,{method:'aadhaar',consent:false}),{status:400});
+ await a.verification.startIdentity(user.id,{method:'aadhaar',consent:true});result={id:'provider_session_123',subject:user.id,requestId:request.requestId,method:'aadhaar',status:'verified',name:user.name,consentVersion:'owner-identity-v1',expiresAt:new Date(Date.now()+86400000).toISOString(),aadhaar:'PRIVATE_FULL_AADHAAR',biometrics:'PRIVATE_BIOMETRICS'};
+ result.subject='different-user';await assert.rejects(b.verification.finishIdentity(user.id),{status:409});result.subject=user.id;result.name='Other Person';await assert.rejects(b.verification.finishIdentity(user.id),{status:409});result.name=user.name;
+ await b.verification.finishIdentity(user.id);assert.equal((await a.verification.status(user.id)).identityVerified,true);assert.equal((await a.verification.status(user.id)).mobileVerified,false);
+ const saved=await a.c('owner_verifications').findOne({_id:user.id});assert.ok(!JSON.stringify(saved).includes('PRIVATE_'));
+ await a.c('owner_verifications').updateOne({_id:user.id},{$set:{mobile:{phone:user.phone,expiresAt:new Date(Date.now()+86400000)}}});const boat=await a.fleet.create({role:'owner',id:user.id},fleetDetails());assert.equal(boat.status,'draft');
+ await a.c('owner_verifications').updateOne({_id:user.id},{$set:{'identity.expiresAt':new Date(0)}});await assert.rejects(a.fleet.update(boat.id,{role:'owner',id:user.id},{revision:boat.revision,details:boat.details}),{status:409});
+});
+test('verification HTTP endpoints require the customer session and reject client verification claims',async()=>{
+ const {a}=await fixture(),registered=await a.registerUser(account()),server=createApp(null,{repository:a});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port,base='/api/owner/verification',headers={Cookie:'nautica_user='+registered.token,Origin:origin,'Content-Type':'application/json','X-Nautica-Request':'1'};
+ try{
+  assert.equal((await fetch(origin+base)).status,401);assert.equal((await fetch(origin+base,{headers:{Cookie:'nautica_admin=forged'}})).status,401);
+  const state=await(await fetch(origin+base,{headers})).json();assert.equal(state.identityVerified,false);assert.equal(state.mobileVerified,false);assert.equal(state.identityEnabled,false);assert.ok(!JSON.stringify(state).includes('hash'));
+  const cross=await fetch(origin+base+'/mobile/send',{method:'POST',headers:{...headers,Origin:'https://attacker.example'},body:JSON.stringify({phone:registered.user.phone,consent:true})});assert.equal(cross.status,403);
+  const claim=await fetch(origin+'/api/owner/boats',{method:'POST',headers,body:JSON.stringify({...fleetDetails(),mobileVerified:true,identityVerified:true,verified:true})});assert.equal(claim.status,409);
+  const identity=await fetch(origin+base+'/identity/check',{method:'POST',headers,body:JSON.stringify({verified:true,subject:registered.user.id,providerId:'forged'})});assert.equal(identity.status,503);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('legacy ownerless boats require an explicit verified owner link and fresh independent review',async()=>{
+ const {a,b}=await fixture(),id='BT-0123456789ABCDEF',original=await a.c('boats').findOne({_id:'b1'});await a.c('boats').insertOne({...original,_id:id,ownerId:null,registrationKey:'legacy-ownerless',createdBy:'admin:legacy',revision:1});
+ const actor={role:'admin',id:'linker'},input={revision:1,ownerEmail:'fixture-owner@example.test',declaration:true,notes:'Ownership authority and verified account confirmed.'};
+ await assert.rejects(a.fleet.assignOwner(id,{role:'owner',id:'fixture-owner'},input),{status:403});await assert.rejects(a.fleet.assignOwner(id,actor,{...input,declaration:false}),{status:400});
+ const linked=await a.fleet.assignOwner(id,actor,input);assert.equal(linked.status,'draft');assert.equal(linked.ownerId,'fixture-owner');await assert.rejects(b.fleet.bookable(id,'2027-01-01'),{status:409});await assert.rejects(a.fleet.assignOwner(id,actor,{...input,revision:linked.revision}),{status:409});
+ const submitted=await a.fleet.submit(id,actor,{revision:linked.revision,declaration:true});await assert.rejects(a.fleet.review(id,actor,{...fleetReview,revision:submitted.revision}),{status:403});const approved=await b.fleet.review(id,{role:'admin',id:'checker'},{...fleetReview,revision:submitted.revision});assert.equal(approved.status,'approved');
 });

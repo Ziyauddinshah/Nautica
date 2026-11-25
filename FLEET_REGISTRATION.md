@@ -52,3 +52,5 @@ Replaced documents remain retained for audit; limits are 64 uploaded versions or
 Deploy the web branch, run `npm ci`, `npm test` and `npm run build`, then start normally. Startup creates fleet indexes alongside the existing schema. No `db:init`, deletion or repeat SQLite migration is needed for an initialized database. All servers must run the updated version before accepting fleet bookings; older server versions lack approval enforcement.
 
 Register each real boat and obtain admin review. Existing sample IDs such as `b1` will no longer be sold; historical bookings stay intact. Do not map a historical sample ID onto an unrelated real boat. Reconcile any upcoming legacy bookings with their passengers and the actual operator. If an admin registers boats, create a separate reviewer using `npm run admin:create` as described in local setup.
+
+Owner verification is now mandatory: see [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md). Admins must register boats against a verified owner email. Legacy ownerless admin boats require an explicit owner link and fresh independent review. Missing/expired owner verification blocks new sales while preserving history.

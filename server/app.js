@@ -1,3 +1,4 @@
+import {verificationRequest} from './verification/http.js';
 import {fleetRequest} from './fleet/http.js';
 import http from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
@@ -37,6 +38,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
           try{return JSON.parse(data);}catch{throw new ApiError(400,'Invalid JSON request.');}
         };
         if(req.method==='GET'&&url.pathname==='/api/boats')return send(200,repo.fleet?await repo.fleet.catalog():{boats:[]});
+        if(url.pathname.startsWith('/api/owner/verification')){const user=await repo.authenticateUser(userToken(req));return await verificationRequest({req,url,repo,user,body,send,throttle,language});}
         if(url.pathname.startsWith('/api/owner/boats')){const user=await repo.authenticateUser(userToken(req));if(await fleetRequest({req,res,url,repo,actor:{role:'owner',id:user.id},body,send,throttle}))return;}
         if(req.method==='GET'&&url.pathname==='/api/health'){await repo.health();return send(200,{ok:true});}
         if(req.method==='GET'&&url.pathname==='/api/payments/config')return send(200,{mode:paymentMode,enabled:paymentMode==='demo'||(paymentMode==='razorpay'&&Boolean(payments?.enabled))});

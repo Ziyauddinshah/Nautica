@@ -11,7 +11,7 @@ const user = {
   name: 'Owner',
   email: 'owner@example.test'
 };
-const json = (data, status = 200) => new Response(JSON.stringify(data), {
+const json = (data, status = 200) => new Response(JSON.stringify(data.boats?{...data,mobileVerified:true,identityVerified:true,mobileEnabled:true,identityEnabled:true}:data), {
   status
 });
 const details = {
@@ -68,7 +68,7 @@ test('owner sees their boat, private document checklist and generated seating bu
   expect(screen.getByRole('button', {
     name: 'Submit for admin review'
   }).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByLabelText('I am authorized to operate this boat. Details and documents are authentic, current and match the actual boat.'));
   expect(screen.getByRole('button', {
     name: 'Submit for admin review'
   }).disabled).toBe(false);
@@ -128,9 +128,7 @@ test('Hindi registration screen translates document categories and review contro
   }));
   render(<I18nProvider><FleetPortal user={user} onUser={() => {}} /></I18nProvider>);
   await screen.findByText('अभी कोई नाव पंजीकृत नहीं है।');
-  fireEvent.click(screen.getByRole('button', {
-    name: 'नाव जोड़ें'
-  }));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'नाव जोड़ें'}).disabled).toBe(false));fireEvent.click(screen.getByRole('button', {name:'नाव जोड़ें'}));
   expect(screen.getByLabelText('पंजीकरण संख्या')).toBeTruthy();
   expect(screen.getByRole('button', {
     name: 'प्रारूप बनाएँ'

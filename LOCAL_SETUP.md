@@ -66,3 +66,7 @@ on the target environment.
 ### Boat registration
 
 Visit `/owner` after signing in to register a real boat. Admin review is at `/admin/fleet`. The initial public catalogue is empty until a documented boat is approved; historical bookings remain available. For documents, local testing allows unscanned files, while production requires a private ClamAV service (`CLAMAV_HOST`, `CLAMAV_PORT`). See [FLEET_REGISTRATION.md](FLEET_REGISTRATION.md) for the India/Varanasi checklist and setup/upgrade requirements. No Android SDK is needed to run this web portal.
+
+### Owner verification
+
+Configure a private shared `MOBILE_OTP_SECRET` plus TextBee for real mobile codes. Aadhaar/alternative identity verification remains unavailable until you supply an authorized provider through the documented merchant bridge; no test code or client checkbox can grant real verification. Use isolated database fixtures/fake providers in automated tests, never the live production database. See [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md).

@@ -1,8 +1,12 @@
+import {identityProvider} from '../server/verification/provider.js';
+import {textbeeConfig} from '../server/services/textbee.js';
 import {openRepository} from '../server/runtime.js';
 import {productionConfig} from '../server/config.js';
 import {emailConfig} from '../server/email.js';
 try{
  if(!process.env.CLAMAV_HOST)throw new Error('Configure a private ClamAV scanner (CLAMAV_HOST) before enabling boat document uploads.');
+ if((process.env.MOBILE_OTP_SECRET||'').length<32||!textbeeConfig().configured)throw new Error('Configure the private shared MOBILE_OTP_SECRET and TextBee for owner mobile verification.');
+ if(!identityProvider().enabled)throw new Error('Configure an authorized identity verification bridge before accepting boat registrations.');
  const config=productionConfig({...process.env,NODE_ENV:'production'});
  const db=await openRepository({...process.env,NODE_ENV:'production'});try{await db.health();}finally{await db.close();}
  console.log('Shared MongoDB cluster and initialized schema are reachable. Verify your backup plan before launch.');

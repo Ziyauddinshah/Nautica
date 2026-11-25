@@ -88,6 +88,16 @@ export class BoatRegistry {
       };
     try {
       return await this.repo.transaction(async session => {
+        if (actor.role === 'admin') {
+          const owner = typeof input.ownerEmail === 'string' ? await this.c('users').findOne({
+            email: input.ownerEmail.trim().toLowerCase()
+          }, {
+            session
+          }) : null;
+          if (!owner) throw new ApiError(400, 'Enter the registered email of a verified boat owner.');
+          boat.ownerId = owner._id;
+        }
+        await this.repo.verification.require(boat.ownerId, session);
         if (actor.role === 'owner') await this.c('users').updateOne({
           _id: actor.id
         }, {
@@ -159,8 +169,53 @@ export class BoatRegistry {
     }).limit(30).toArray();
     return {
       ...privateBoat(boat, actor),
+      ...(actor.role === 'admin' ? {
+        ownerVerification: await this.repo.verification.status(boat.ownerId)
+      } : {}),
       audit: audits
     };
+  }
+  async assignOwner(id, actor, input) {
+    if (actor.role !== 'admin') throw new ApiError(403, 'Administrator access required.');
+    if (typeof input.ownerEmail !== 'string' || input.declaration !== true || typeof input.notes !== 'string' || input.notes.trim().length < 10 || input.notes.length > 2000) throw new ApiError(400, 'Enter the verified owner email, authority declaration and review notes.');
+    return this.repo.transaction(async session => {
+      const boat = await this.load(id, actor, session);
+      this.checkRevision(boat, input.revision);
+      if (boat.ownerId) throw new ApiError(409, 'This boat already has an owner. Ownership transfers need separate review.');
+      const user = await this.c('users').findOne({
+        email: input.ownerEmail.trim().toLowerCase()
+      }, {
+        session
+      });
+      if (!user) throw new ApiError(400, 'Enter the registered email of a verified boat owner.');
+      await this.repo.verification.require(user._id, session);
+      boat.ownerId = user._id;
+      boat.status = 'draft';
+      boat.revision++;
+      boat.createdBy = actorKey(actor);
+      boat.review = null;
+      await this.c('boats').updateOne({
+        _id: id
+      }, {
+        $set: {
+          ownerId: user._id,
+          status: 'draft',
+          revision: boat.revision,
+          createdBy: boat.createdBy,
+          review: null
+        },
+        $inc: {
+          bookingFence: 1
+        }
+      }, {
+        session
+      });
+      await this.audit(boat, actor, 'owner_linked', session, {
+        ownerId: user._id,
+        notes: input.notes.trim()
+      });
+      return privateBoat(boat, actor);
+    });
   }
   async update(id, actor, input) {
     return this.repo.transaction(async session => {
@@ -168,6 +223,7 @@ export class BoatRegistry {
       this.checkRevision(boat, input.revision);
       if (actor.role === 'admin' && boat.createdBy !== actorKey(actor)) throw new ApiError(403, 'Only the submitting owner or admin may edit boat details.');
       if (!['draft', 'rejected', 'approved', 'suspended'].includes(boat.status)) throw new ApiError(409, 'Withdraw a pending submission before editing.');
+      await this.repo.verification.require(boat.ownerId, session);
       await this.mutable(boat, session);
       const details = boatDetails(input.details);
       if (registrationKey(details) !== boat.registrationKey) throw new ApiError(409, 'Registration identity cannot be changed. Contact an administrator.');
@@ -208,6 +264,7 @@ export class BoatRegistry {
       this.checkRevision(boat, input.revision);
       if (actor.role === 'admin' && boat.createdBy !== actorKey(actor)) throw new ApiError(403, 'Only the submitting owner or admin may upload documents.');
       if (!['draft', 'rejected', 'approved', 'suspended'].includes(boat.status)) throw new ApiError(409, 'Withdraw a pending submission before changing documents.');
+      await this.repo.verification.require(boat.ownerId, session);
       await this.mutable(boat, session);
       const stored = await this.c('boat_documents').aggregate([{
         $match: {
@@ -282,6 +339,7 @@ export class BoatRegistry {
       this.checkRevision(boat, input.revision);
       if (actor.role === 'admin' && boat.createdBy !== actorKey(actor)) throw new ApiError(403, 'Only the submitting owner or admin may submit.');
       if (!['draft', 'rejected'].includes(boat.status)) throw new ApiError(409, 'Boat is not ready for submission.');
+      await this.repo.verification.require(boat.ownerId, session);
       if (input.declaration !== true || !completeDocuments(boat, undefined, this.production)) throw new ApiError(400, 'Attach every required, valid document and accept the operator declaration.');
       boat.status = 'pending';
       boat.revision++;
@@ -312,6 +370,7 @@ export class BoatRegistry {
         if (boat.createdBy === actorKey(actor)) throw new ApiError(403, 'A different administrator must review this submission.');
       }
       if (input.action === 'approve') {
+        await this.repo.verification.require(boat.ownerId, session);
         const checks = approvalChecks(input);
         if (!completeDocuments(boat, undefined, this.production)) throw new ApiError(409, 'Documents are missing, expired or not clean.');
         boat.review = {
@@ -405,7 +464,10 @@ export class BoatRegistry {
       'details.name': 1
     }).toArray();
     return {
-      boats: rows.filter(boat => completeDocuments(boat, today, this.production)).map(publicBoat)
+      boats: (await Promise.all(rows.filter(boat => completeDocuments(boat, today, this.production)).map(async boat => {
+        const state = await this.repo.verification.status(boat.ownerId);
+        return state.mobileVerified && state.identityVerified ? publicBoat(boat) : null;
+      }))).filter(Boolean)
     };
   }
   async bookable(id, date, session) {
@@ -429,6 +491,7 @@ export class BoatRegistry {
       maxTimeMS: 5000
     });
     if (!boat || !completeDocuments(boat, date, this.production)) throw new ApiError(409, 'Boat is not approved or its documents are not valid for this trip.');
+    await this.repo.verification.require(boat.ownerId, session);
     return publicBoat(boat);
   }
 }

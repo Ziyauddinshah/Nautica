@@ -23,7 +23,7 @@ export async function fleetRequest({
     });
     return true;
   }
-  const match = path.match(/^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review)(?:\/([a-f0-9-]{36}))?)?$/);
+  const match = path.match(/^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review|owner)(?:\/([a-f0-9-]{36}))?)?$/);
   if (!match) return false;
   const [, id, action, documentId] = match;
   if (req.method === 'GET' && action === 'documents' && documentId) {
@@ -51,6 +51,7 @@ export async function fleetRequest({
   const input = await body(action === 'documents' ? 8 * 1024 * 1024 : 16384);
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ApiError(400, 'Invalid boat request.');
   const method = {
+    owner: 'assignOwner',
     documents: 'upload',
     submit: 'submit',
     withdraw: 'withdraw',

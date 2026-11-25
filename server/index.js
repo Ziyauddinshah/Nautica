@@ -1,3 +1,5 @@
+import {OwnerVerification} from './verification/repository.js';
+import {identityProvider} from './verification/provider.js';
 import {createTextbeeGateway} from './services/textbee.js';
 import {createSmsService} from './services/sms.js';
 import {MongoSmsStore} from './repositories/mongo-sms.js';
@@ -15,6 +17,7 @@ const mode=process.env.NAUTICA_BOOKING_MODE||'seats';
 if(!['seats','private'].includes(mode))throw new Error('NAUTICA_BOOKING_MODE must be seats or private.');
 const port=Number(process.env.PORT||3001),host=process.env.HOST||'127.0.0.1';
 const smsGateway=createTextbeeGateway();
+repository.verification=new OwnerVerification(repository,{sms:smsGateway,provider:identityProvider()});
 repository.smsEnabled=smsGateway.enabled;repository.smsAdminEnabled=Boolean(smsGateway.config.adminTo);
 const smsService=createSmsService(new MongoSmsStore(repository),smsGateway);
 const emailService=createSharedEmailService(new MongoOutboxStore(repository));

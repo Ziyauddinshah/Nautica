@@ -1,3 +1,4 @@
+import {OwnerVerification} from '../verification/repository.js';
 import {BoatRegistry} from '../fleet/repository.js';
 import {saveBookingPayment} from './payment-records.js';
 import {historyView,journeyEndExpression,paymentRow} from '../domain/history.js';
@@ -15,7 +16,7 @@ const conflict=booked=>new ApiError(409,'Some seats were just booked. Choose dif
 const tripKey=input=>[input.boatId,input.date,input.slot].join('|');
 const offsetOf=query=>Math.max(0,Math.min(1000000,parseInt(query.offset)||0));
 export class MongoRepository{
- constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.fleet=new BoatRegistry(this);}
+ constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.verification=new OwnerVerification(this);this.fleet=new BoatRegistry(this);}
  c(name){return this.db.collection(name);}
  async transaction(work){
   const session=this.client.startSession(),deadline=Date.now()+10000;
@@ -42,8 +43,8 @@ export class MongoRepository{
   if(!row)throw new ApiError(503,'Service is temporarily unavailable.');
  }
  async consumeLimits(category,ip,identifier=''){
-  const keys=[{id:category+':ip:'+digest(ip||''),limit:category==='forgot'?5:category==='register'?10:category==='admin-login'?5:15}];
-  if(identifier)keys.push({id:category+':account:'+digest(identifier),limit:category==='forgot'?3:category==='register'?10:15});
+  const keys=[{id:category+':ip:'+digest(ip||''),limit:['owner-otp-send','owner-identity'].includes(category)?10:category==='forgot'?5:category==='register'?10:category==='admin-login'?5:15}];
+  if(identifier)keys.push({id:category+':account:'+digest(identifier),limit:['owner-otp-send','owner-identity'].includes(category)?3:category==='forgot'?3:category==='register'?10:15});
   for(const {id,limit} of keys){
    const fresh={$lte:[{$ifNull:['$expiresAt',new Date(0)]},'$$NOW']};
    const row=await this.c('limits').findOneAndUpdate({_id:id},[{$set:{
