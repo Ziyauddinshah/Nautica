@@ -62,7 +62,7 @@ export async function enqueueNotice(repo, {
 export function noticeMessage(notice, config, recipient, messageId) {
   const language = notice.language === 'hi' ? 'hi' : 'en',
     t = value => translate(value, {}, language),
-    fields = (notice.fields || []).map(([key, value]) => [t(key), key === 'Document' ? t(value) : String(value)]),
+    fields = (notice.fields || []).map(([key, value]) => [t(key), ['Document','Status','Incident','Severity'].includes(key) ? t(value) : String(value)]),
     heading = t(notice.heading),
     body = t(notice.body);
   return {
@@ -83,7 +83,7 @@ export function noticeMessage(notice, config, recipient, messageId) {
 }
 export function noticeSms(notice) {
   const t = value => translate(value, {}, notice.language === 'hi' ? 'hi' : 'en');
-  return ['Nautica: ' + t(notice.heading), notice.reference, ...(notice.fields || []).filter(([key]) => ['Refund amount', 'Document', 'Expiry date'].includes(key)).map(([key, value]) => t(key) + ': ' + (key === 'Document' ? t(value) : value))].join('\n');
+  return ['Nautica: ' + t(notice.heading), notice.reference, ...(notice.fields || []).filter(([key]) => ['Refund amount', 'Document', 'Expiry date'].includes(key)).map(([key, value]) => t(key) + ': ' + (['Document','Status','Incident','Severity'].includes(key) ? t(value) : value))].join('\n');
 }
 export async function bookingNotice(repo, record, event, heading, session) {
   return enqueueNotice(repo, {

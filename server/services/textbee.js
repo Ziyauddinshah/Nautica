@@ -12,12 +12,14 @@ export function textbeeConfig(env=process.env){
  return {enabled,configured:enabled&&validKey&&/^[a-f\d]{24}$/i.test(deviceId),apiKey,deviceId,countryCode,adminTo:smsPhone(env.SMS_ADMIN_TO,countryCode)};
 }
 export class SmsError extends Error{constructor(code,{retryable=false,unknown=false}={}){super('SMS service request failed.');this.code=code;this.retryable=retryable;this.unknown=unknown;}}
-export function createTextbeeGateway({config=textbeeConfig(),transport=fetch}={}){
+export function createTextbeeGateway({config=textbeeConfig(),transport=fetch,onHealth=()=>{}}={}){
+ const report=value=>{try{Promise.resolve(onHealth(value)).catch(()=>{});}catch{}};
  async function request(path,body){
   if(!config.configured)throw new SmsError('SMS_NOT_CONFIGURED');
-  let response;try{response=await transport(BASE+path,{method:body?'POST':'GET',redirect:'error',headers:{'x-api-key':config.apiKey,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(12000)});}catch{throw new SmsError('SMS_REQUEST_UNKNOWN',{unknown:Boolean(body)});}
+  let response;try{response=await transport(BASE+path,{method:body?'POST':'GET',redirect:'error',headers:{'x-api-key':config.apiKey,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(12000)});}catch{report(false);throw new SmsError('SMS_REQUEST_UNKNOWN',{unknown:Boolean(body)});}
+  report(response.ok||response.status===400);
   if(!response.ok){if(response.status===429)throw new SmsError('SMS_RATE_LIMITED',{retryable:true});if([400,401,403,404].includes(response.status))throw new SmsError('SMS_REQUEST_REJECTED');throw new SmsError('SMS_REQUEST_UNKNOWN',{unknown:Boolean(body)});}
-  try{return await response.json();}catch{throw new SmsError('SMS_RESPONSE_UNKNOWN',{unknown:Boolean(body)});}
+  try{return await response.json();}catch{report(false);throw new SmsError('SMS_RESPONSE_UNKNOWN',{unknown:Boolean(body)});}
  }
  return {config,enabled:config.configured,async send(recipient,message){
   if(!smsPhone(recipient,config.countryCode))throw new SmsError('SMS_INVALID_RECIPIENT');

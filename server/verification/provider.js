@@ -1,7 +1,8 @@
 import { ApiError } from '../errors.js';
 // Adapter for a merchant-controlled bridge to an authorized identity provider.
 // This is an explicit integration contract, not an invented UIDAI API.
-export function identityProvider(env = process.env, transport = fetch) {
+export function identityProvider(env = process.env, transport = fetch, onHealth = ()=>{}) {
+  const report=value=>{try{Promise.resolve(onHealth(value)).catch(()=>{});}catch{}};
   const base = env.IDENTITY_BRIDGE_URL,
     key = env.IDENTITY_BRIDGE_KEY,
     checkout = env.IDENTITY_CHECKOUT_ORIGIN;
@@ -28,12 +29,12 @@ export function identityProvider(env = process.env, transport = fetch) {
         } : {}),
         signal: AbortSignal.timeout(12000)
       });
-      if (!response.ok) throw new Error();
+      if (!response.ok){const error=new Error();error.providerReachable=response.status<500&&![401,403,429].includes(response.status);throw error;}
       const result = await response.json();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error();
-      return result;
-    } catch {
-      throw new ApiError(503, 'Identity verification is temporarily unavailable.');
+      report(true);return result;
+    } catch (error) {
+      report(error.providerReachable===true);throw new ApiError(503, 'Identity verification is temporarily unavailable.');
     }
   }
   return {

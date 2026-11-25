@@ -1,3 +1,4 @@
+import AdminSignIn from './AdminSignIn.jsx';
 import DocumentRenewals from './DocumentRenewals.jsx';
 import DocumentReminders from './DocumentReminders.jsx';
 import OwnerVerification from './OwnerVerification.jsx';
@@ -149,27 +150,7 @@ export default function FleetPortal({
   const canEdit = !admin || boat?.createdBy === 'admin:' + adminName;
   const editable = canEdit && boat && ['draft', 'rejected', 'approved', 'suspended'].includes(boat.status);
   return <><header className="header"><a className="brand" href="/">⚓ Nautica.</a><LanguageSwitcher /><nav><a href={admin ? '/admin' : '/account'}>{t(admin ? 'Booking administration' : 'My account')}</a><a href="/">{t('Explore boats')}</a></nav></header><main className="fleet-portal"><h1>{t(admin ? 'Fleet review' : 'Register a boat')}</h1><p>{t('India / Varanasi. Only approved vessels with valid documents can accept new bookings.')}</p><p>{t('This platform checklist requires authority verification. Uploading documents does not grant legal permission to operate.')}</p>{error && <p role="alert">{t(error)}</p>}
- {!ready ? admin ? <form onSubmit={event => {
-        event.preventDefault();
-        run(async () => {
-          await request('/api/admin/login', {
-            method: 'POST',
-            body: login
-          });
-          setAdminName(login.username);
-          setLogin({
-            username: '',
-            password: ''
-          });
-          setAuthenticated(true);
-        });
-      }}><h2>{t('Admin sign in')}</h2><label>{t('Username')}<input required autoComplete="username" value={login.username} onChange={e => setLogin({
-            ...login,
-            username: e.target.value
-          })} /></label><label>{t('Password')}<input required type="password" autoComplete="current-password" value={login.password} onChange={e => setLogin({
-            ...login,
-            password: e.target.value
-          })} /></label><button disabled={busy} className="primary">{t('Sign in')}</button></form> : user === undefined ? <p role="status">{t('Loading…')}</p> : <AuthForm onSuccess={onUser} message={t('Sign in to register and manage your boats.')} /> : <>
+ {!ready ? admin ? <AdminSignIn onSuccess={result=>{setAdminName(result.username);setAuthenticated(true);}}/> : user === undefined ? <p role="status">{t('Loading…')}</p> : <AuthForm onSuccess={onUser} message={t('Sign in to register and manage your boats.')} /> : <>
  {!admin && <OwnerVerification key={user.id} user={user} onStatus={setOwnerVerified} />}
  <button disabled={busy} onClick={() => setRefresh(v => v + 1)}>{t('Refresh')}</button> <button disabled={busy || !admin && !ownerVerified} className="primary" onClick={() => {
           setCreating(true);

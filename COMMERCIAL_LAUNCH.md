@@ -96,7 +96,7 @@ separately; no deployed image/HTTPS endpoint is claimed here.
   payments and test keys. Orders/capture checks are INR; USD is an indicative
   display using a fixed ₹83/USD conversion, not a USD charge or live FX quote.
 - Create individual admin credentials and restrict admin access as appropriate.
-  Admin MFA and customer email verification are not implemented. Arrange password
+  Admin MFA is implemented and required; complete enrollment as described in ADMIN_SECURITY_OPERATIONS.md. Customer email verification is not implemented. Arrange password
   recovery and incident response without sharing accounts.
 - Perform target-host security, accessibility, browser/printing/QR and load checks.
 
@@ -133,3 +133,5 @@ gracefully and test failover/restore procedures before expanding capacity.
 - Finish authorized Aadhaar/alternative identity provider onboarding and bridge integration described in OWNER_VERIFICATION.md. Verify consent/alternative and revocation handling, protect the shared OTP secret, and exercise real mobile delivery in staging. Existing boats require verified owners; link/re-review ownerless legacy boats and reconcile active bookings/checkouts before reopening sales. The prepared bridge alone is not Aadhaar verification.
 
 - Publish the 24-hour full-refund policy and real support contacts. Test cancellation approval, inventory release, signed refund webhooks, uncertain/final-failed refunds, current boarding checks and document-renewal reminders in staging. Keep at least one worker running or schedule `npm run jobs:run`; see AFTERCARE.md.
+
+- Complete admin MFA rollout and backup the encryption key separately. Test operational alert delivery and configure an external uptime monitor. See ADMIN_SECURITY_OPERATIONS.md; no in-process monitor can cover every process being offline.

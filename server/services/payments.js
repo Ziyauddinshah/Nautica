@@ -23,7 +23,7 @@ export function createPaymentService(store,gateway,{mode='seats',refunds=null}={
   return settle(row,input.paymentId);
  }
  async function webhook(raw,signature){
-  const event=gateway.readWebhook(raw,signature);if(!event)return;if(event.type==='refund'){if(refunds)await refunds.webhook(event.refundId);return;}
+  const event=gateway.readWebhook(raw,signature);if(!event)return;if(event.type==='payment_failed'){const row=await store.findOrder(event.orderId);if(row){const remote=await gateway.getPayment(event.paymentId);if(remote.status==='failed'&&remote.id===event.paymentId&&remote.orderId===row.orderId&&remote.amount===row.amount&&remote.currency==='INR')await store.recordFailure?.(row,remote);}return;}if(event.type==='refund'){if(refunds)await refunds.webhook(event.refundId);return;}
   let row=await store.findOrder(event.orderId);
   if(!row&&event.attemptId)row=await store.recover(event.orderId,event.attemptId);
   if(!row)throw new ApiError(503,'Payment is awaiting reconciliation.');

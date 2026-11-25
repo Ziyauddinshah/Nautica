@@ -58,5 +58,6 @@ export class MongoPaymentStore{
    throw error; // Unknown commits/outages must not be relabeled as seat conflicts or refunds.
   }
  }
+ async recordFailure(row,remote){await this.c('payment_failures').updateOne({_id:remote.id},{$setOnInsert:{orderId:row.orderId,userId:row.userId,at:new Date(),amount:remote.amount,currency:'INR'}},{upsert:true});}
  async attention(){return (await this.c('payments').find({status:'refund_required'}).sort({expires:-1}).limit(100).toArray()).map(row=>({id:row._id,orderId:row.orderId,paymentId:row.paymentId,status:row.status,amount:row.amount,currency:'INR',name:row.payload.name,email:row.payload.email,phone:row.payload.phone}));}
 }

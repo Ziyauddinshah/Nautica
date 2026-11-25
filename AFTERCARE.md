@@ -22,7 +22,7 @@ A refund is marked `processed` / payment `refunded` only after authenticated Raz
 
 The existing Razorpay callback endpoint is `/api/payments/razorpay/webhook`. Enable these events in the Razorpay dashboard using the existing private webhook secret:
 
-- `payment.captured`, `order.paid`
+- `payment.captured`, `order.paid`, `payment.failed`
 - `refund.created`, `refund.processed`, `refund.failed`
 
 Refund webhooks verify signatures and fetch current provider evidence rather than trusting payload amounts/status. Read-only polling also reconciles pending/uncertain outcomes, so a missed webhook does not imply a new refund. Duplicate or stale events cannot downgrade a completed refund or resurrect a cancelled booking.

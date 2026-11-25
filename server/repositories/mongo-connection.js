@@ -24,6 +24,14 @@ export async function connectMongo(env=process.env,{initialize=false}={}){
 }
 export async function createMongoIndexes(db){
  const specs={
+  payment_failures:[[{at:1},{}]],
+  operational_alerts:[[{status:1,lastSeen:-1},{}]],
+  operations_audit:[[{incident:1,at:-1},{}]],
+  service_health:[[{instance:1},{}]],
+  ops_instances:[[{lastSeen:1},{}]],
+  ops_webhooks:[[{status:1,nextAttemptAt:1},{}]],
+  admin_challenges:[[{expiresAt:1},{expireAfterSeconds:0}],[{userId:1},{}]],
+  security_events:[[{at:1},{}],[{actor:1,at:-1},{}]],
   refunds:[[{paymentRecordId:1},{unique:true}],[{paymentId:1},{unique:true,partialFilterExpression:{paymentId:{$type:'string'}}}],[{providerRefundId:1},{unique:true,partialFilterExpression:{providerRefundId:{$type:'string'}}}],[{status:1,nextCheckAt:1},{}],[{createdAt:-1,_id:1},{}]],
   financial_audit:[[{reference:1,at:1},{}]],
   maintenance:[[{nextRunAt:1},{}]],

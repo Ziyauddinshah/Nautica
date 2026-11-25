@@ -19,6 +19,8 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
   function userCookie(value,maxAge=28800){return `nautica_user=${value}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${maxAge}${production?'; Secure':''}`;}
   async function throttle(req,category,identifier=''){if(repo.consumeLimits)return repo.consumeLimits(category,clientIP(req),identifier);const now=Date.now();for(const [key,value]of userAttempts)if(value.until<=now)userAttempts.delete(key);if(userAttempts.size>10000)throw new ApiError(429,'Please try again later.');const keys=[category+':ip:'+clientIP(req),...(identifier?[category+':account:'+digest(identifier)]:[])];for(const key of keys){const value=userAttempts.get(key)||{count:0,until:now+900000};if(value.count>= (category==='forgot'?(key.includes(':account:')?3:5):category==='register'?10:15))throw new ApiError(429,'Too many attempts. Try again after 15 minutes.');value.count++;userAttempts.set(key,value);}}
   function token(req) { return (req.headers.cookie || '').split(';').map(v=>v.trim()).find(v=>v.startsWith('nautica_admin='))?.slice(14); }
+  function mfaCookie(value,maxAge=300){return `nautica_admin_step=${value}; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=${maxAge}${production?'; Secure':''}`;}
+  function mfaToken(req){return (req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith('nautica_admin_step='))?.slice(19);}
   function cookie(value, maxAge=28800) {return `nautica_admin=${value}; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=${maxAge}${production?'; Secure':''}`;}
   const server = http.createServer(async (req,res) => {
     const language=req.headers['x-nautica-language']==='hi'?'hi':'en';
@@ -84,11 +86,19 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
           const attempt=attempts.get(key)||{since:now,count:0};if(attempt.count>=5)throw new ApiError(429,'Too many sign-in attempts. Try again after 15 minutes.');
           const input=await body();
           if(!input||typeof input!=='object'||typeof input.username!=='string'||typeof input.password!=='string'||input.username.length>80||input.password.length>256)throw new ApiError(400,'Invalid sign-in fields.');
-          try{const result=await repo.loginAdmin(input.username,input.password);attempts.delete(key);return send(200,{username:result.username},{'Set-Cookie':cookie(result.token)});}
+          if(repo.consumeLimits)await repo.consumeLimits('admin-password',clientIP(req),input.username);
+          try{const result=await repo.loginAdmin(input.username,input.password);attempts.delete(key);if(result.mfaRequired){if(token(req))await repo.logoutAdmin(token(req));return send(200,{mfaRequired:true,enrollmentRequired:result.enrollmentRequired},{'Set-Cookie':[mfaCookie(result.challengeToken),cookie('',0)]});}return send(200,{username:result.username},{'Set-Cookie':cookie(result.token)});}
           catch(error){attempt.count++;attempts.set(key,attempt);throw error;}
         }
+        if(req.method==='POST'&&['/api/admin/mfa/setup','/api/admin/mfa/verify'].includes(url.pathname)){if(!repo.mfa)throw new ApiError(503,'Admin authentication is temporarily unavailable.');const step=mfaToken(req);const challenge=typeof step==='string'&&/^[a-f0-9]{64}$/.test(step)?await repo.c('admin_challenges').findOne({_id:digest(step)}):null;await throttle(req,'admin-mfa',challenge?.userId||'');if(url.pathname.endsWith('/setup'))return send(200,await repo.mfa.setup(step));const result=await repo.mfa.verify(step,await body());return send(200,{username:result.username,...(result.recoveryCodes?{recoveryCodes:result.recoveryCodes}:{})},{'Set-Cookie':[cookie(result.token),mfaCookie('',0)]});}
         if(url.pathname.startsWith('/api/admin/')){
           const username=await repo.authenticateAdmin(token(req));
+          if(req.method==='GET'&&url.pathname==='/api/admin/operations')return send(200,await repo.ops.list(Object.fromEntries(url.searchParams)));
+          if(req.method==='POST'&&url.pathname==='/api/admin/operations/delivery/retry'){await throttle(req,'operations-admin',username);const result=await repo.ops.retryDelivery(username);emailService?.kick();smsService?.kick();return send(200,result);}
+          const retirement=url.pathname.match(/^\/api\/admin\/operations\/instances\/([a-zA-Z0-9_-]{1,60})\/retire$/);if(req.method==='POST'&&retirement){await throttle(req,'operations-admin',username);return send(200,await repo.ops.retire(retirement[1],username,await body()));}
+          const incident=url.pathname.match(/^\/api\/admin\/operations\/([a-zA-Z0-9:_-]{1,100})\/(acknowledge|history)$/);if(incident){if(req.method==='GET'&&incident[2]==='history')return send(200,await repo.ops.history(incident[1]));if(req.method==='POST'&&incident[2]==='acknowledge'){await throttle(req,'operations-admin',username);return send(200,{alert:await repo.ops.acknowledge(incident[1],username,await body())});}}
+          if(req.method==='GET'&&url.pathname==='/api/admin/security')return send(200,await repo.mfa.status(username));
+          if(req.method==='POST'&&url.pathname==='/api/admin/security/recovery'){await throttle(req,'admin-mfa',username);return send(200,await repo.mfa.rotate(username,await body()));}
           if(url.pathname.startsWith('/api/admin/fleet')&&await fleetRequest({req,res,url,repo,actor:{role:'admin',id:username},body,send,throttle,language}))return;
           const cancel=url.pathname.match(/^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/cancellation$/);
           if(req.method==='POST'&&cancel){if(!repo.cancellations)throw new ApiError(503,'Cancellation service is unavailable.');await throttle(req,'cancellation-admin',username);const result=await repo.cancellations.decide(cancel[1],username,await body());aftercare?.kick();emailService?.kick();smsService?.kick();return send(200,{cancellation:result});}
@@ -113,7 +123,7 @@ export function createApp(db, { mode = 'seats', production = false, publicOrigin
       if(!['GET','HEAD'].includes(req.method))throw new ApiError(405,'Method not allowed.');
       const base=resolve(projectRoot,'dist'),path=resolve(base,'.'+decodeURIComponent(url.pathname));
       if(path!==base&&!path.startsWith(base+sep))throw new ApiError(404,'Not found.');
-      const filename=['/owner','/owner/','/admin/fleet','/admin/fleet/','/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
+      const filename=['/owner','/owner/','/admin/operations','/admin/operations/','/admin/fleet','/admin/fleet/','/','/admin','/admin/','/account','/account/','/reset-password','/reset-password/'].includes(url.pathname)?resolve(base,'index.html'):path;
       let file;try{file=await readFile(filename);}catch{throw new ApiError(404,'Page not found.');}
       const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff'};
       res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Cache-Control':extname(filename)==='.html'?'no-cache':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);

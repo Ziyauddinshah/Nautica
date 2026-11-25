@@ -74,3 +74,7 @@ Configure a private shared `MOBILE_OTP_SECRET` plus TextBee for real mobile code
 ### Cancellation, refunds and expiry reminders
 
 The initial cancellation cutoff is 24 hours before departure, with admin approval. The server starts shared refund/reminder workers automatically; `npm run jobs:run` is available for an external scheduler and can execute approved real refunds. Use an isolated staging database and provider test keys for testing. See [AFTERCARE.md](AFTERCARE.md) for webhook subscriptions, renewal review, reconciliation and deployment steps.
+
+### Admin MFA and monitoring
+
+Set a private random 64-hex-character `ADMIN_MFA_ENCRYPTION_KEY` on every replica. Existing legacy admins require `npm run admin:mfa:reset` from a trusted interactive server terminal before enrollment at `/admin`. Use `/admin/operations` for alerts. Follow [ADMIN_SECURITY_OPERATIONS.md](ADMIN_SECURITY_OPERATIONS.md), including independent uptime monitoring and optional webhook delivery.

@@ -1,3 +1,4 @@
+import OperationsDashboard from './components/OperationsDashboard.jsx';
 import FleetPortal from './components/FleetPortal.jsx';
 import useBackgroundRefresh from './hooks/useBackgroundRefresh.js';
 import LanguageSwitcher, { useI18n } from "./i18n/I18nProvider.jsx";
@@ -153,6 +154,7 @@ export default function App({
     openFlow(next, event.currentTarget);
   }
   if (['/owner','/admin/fleet'].includes(window.location.pathname.replace(/\/$/,'')))return <FleetPortal key={window.location.pathname.startsWith('/admin')?'admin':user?.id||'guest'} admin={window.location.pathname.startsWith('/admin')} user={user} onUser={setUser}/>;
+  if(window.location.pathname.replace(/\/$/,'')==='/admin/operations')return <OperationsDashboard/>;
   if (window.location.pathname.replace(/\/$/, '') === '/admin') return <AdminDashboard />;
   if (window.location.pathname.replace(/\/$/, '') === '/reset-password') return <ResetPassword token={resetToken} onUser={setUser} />;
   if (window.location.pathname.replace(/\/$/, '') === '/account') return <CustomerAccount key={user?.id || 'guest'} user={user} onUser={setUser} currency={currency} onCurrency={toggleCurrency} />;

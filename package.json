@@ -30,7 +30,8 @@
     "db:connect": "node --env-file-if-exists=.env scripts/db-connect.js",
     "db:backfill:payments": "node --env-file-if-exists=.env scripts/backfill-payments.js",
     "sms:verify": "node --env-file-if-exists=.env scripts/sms-verify.js",
-    "jobs:run": "node --env-file-if-exists=.env scripts/aftercare-run.js"
+    "jobs:run": "node --env-file-if-exists=.env scripts/aftercare-run.js",
+    "admin:mfa:reset": "node --env-file-if-exists=.env scripts/admin-mfa-reset.js"
   },
   "dependencies": {
     "@fontsource/noto-sans-devanagari": "^5.3.0",

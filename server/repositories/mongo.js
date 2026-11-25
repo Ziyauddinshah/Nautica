@@ -1,3 +1,5 @@
+import {Operations} from '../operations/repository.js';
+import {AdminMfa} from '../security/admin-mfa.js';
 import {DocumentReminders} from '../aftercare/reminders.js';
 import {Cancellations} from '../aftercare/cancellations.js';
 import {OwnerVerification} from '../verification/repository.js';
@@ -18,7 +20,7 @@ const conflict=booked=>new ApiError(409,'Some seats were just booked. Choose dif
 const tripKey=input=>[input.boatId,input.date,input.slot].join('|');
 const offsetOf=query=>Math.max(0,Math.min(1000000,parseInt(query.offset)||0));
 export class MongoRepository{
- constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.cancellations=new Cancellations(this);this.reminders=new DocumentReminders(this);this.verification=new OwnerVerification(this);this.fleet=new BoatRegistry(this);}
+ constructor(connection){Object.assign(this,connection);this.kind='mongodb';this.ops=new Operations(this);this.mfa=new AdminMfa(this);this.cancellations=new Cancellations(this);this.reminders=new DocumentReminders(this);this.verification=new OwnerVerification(this);this.fleet=new BoatRegistry(this);}
  c(name){return this.db.collection(name);}
  async transaction(work){
   const session=this.client.startSession(),deadline=Date.now()+10000;
@@ -57,8 +59,9 @@ export class MongoRepository{
   }
  }
  async newSession(user,session,role='user'){
+  if(role==='admin'&&(!user.factorVerified||!user.mfa?.secret))throw new ApiError(401,'Two-factor authentication is required.');
   const token=randomBytes(32).toString('hex');
-  await this.c('sessions').insertOne({_id:digest(token),role,userId:user.id,version:user.authVersion||0,expiresAt:new Date(Date.now()+28800000)},{session});
+  await this.c('sessions').insertOne({_id:digest(token),role,...(role==='admin'?{mfa:true,mfaVersion:user.mfaVersion}:{}),userId:user.id,version:user.authVersion||0,expiresAt:new Date(Date.now()+28800000)},{session});
   return role==='user'?{token,user:publicUser(user)}:{token,username:user.id};
  }
  async registerUser(input){
@@ -83,6 +86,7 @@ export class MongoRepository{
   const session=await this.c('sessions').findOne({_id:digest(token),role,expiresAt:{$gt:new Date()}},options);
   const user=session&&await this.c(role==='user'?'users':'admins').findOne({_id:session.userId},options);
   if(!user||(user.authVersion||0)!==session.version)throw new ApiError(401,'Your session has expired. Please sign in again.');
+  if(role==='admin'){this.mfa.ready();if(!session.mfa||!user.mfa?.secret||session.mfaVersion!==user.mfaVersion)throw new ApiError(401,'Two-factor authentication is required.');this.mfa.box.open(user.mfa.secret,user.id);}
   return role==='user'?publicUser(user):user.id;
  }
  authenticateUser(token){return this.authenticate(token,'user');}
@@ -93,18 +97,11 @@ export class MongoRepository{
   if(!/^[a-zA-Z0-9_.@-]{3,80}$/.test(username)||!passwordValid(password))throw new Error('Use a valid username and a 12–256 character password.');
   const salt=randomBytes(16).toString('hex'),hash=scryptSync(password,salt,64).toString('hex');
   await this.transaction(async session=>{
-   await this.c('admins').updateOne({_id:username},{$set:{id:username,salt,hash},$inc:{authVersion:1}},{upsert:true,session});
+   await this.c('admins').updateOne({_id:username},{$set:{id:username,salt,hash},$setOnInsert:{mfaEnrollmentAllowed:true},$inc:{authVersion:1}},{upsert:true,session});
    await this.c('sessions').deleteMany({userId:username,role:'admin'},{session});
   });
  }
- async loginAdmin(username,password){
-  return this.transaction(async session=>{
-   const user=await this.c('admins').findOne({_id:username},{session});
-   const candidate=scryptSync(password,user?.salt||'nautica-dummy-salt',64),expected=user?Buffer.from(user.hash,'hex'):Buffer.alloc(64);
-   if(!user||!timingSafeEqual(candidate,expected))throw new ApiError(401,'Invalid admin username or password.');
-   return this.newSession(user,session,'admin');
-  });
- }
+ async loginAdmin(username,password){return this.mfa.begin(username,password);}
  async changeUserPassword(id,input){
   if(!input||typeof input.currentPassword!=='string'||input.currentPassword.length>256||!passwordValid(input.newPassword))throw new ApiError(400,'Enter your current password and a new password of 12–256 characters.');
   if(input.currentPassword===input.newPassword)throw new ApiError(400,'Choose a different new password.');
@@ -164,7 +161,7 @@ export class MongoRepository{
   await this.c('inventory').updateOne({_id:trip._id},{$set:{occupied:trip.occupied}},{session});
   const storedBooking={_id:record.id,...record,userId:user?.id||null,requestKey:input.requestKey,requestHash:prepared.hash};
   await this.c('bookings').insertOne(storedBooking,{session});
-  for(const audience of ['customer','admin'])await this.c('outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.email:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,messageId:`<${record.id}.${audience}@nautica.invalid>`},{session});
+  for(const audience of ['customer','admin'])await this.c('outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.email:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,createdAt:record.createdAt,messageId:`<${record.id}.${audience}@nautica.invalid>`},{session});
   if(this.smsEnabled)for(const audience of (this.smsAdminEnabled?['customer','admin']:['customer']))await this.c('sms_outbox').insertOne({_id:record.id+':'+audience,bookingId:record.id,audience,recipient:audience==='customer'?record.customer.phone:null,status:'pending',attempts:0,nextAttemptAt:0,leaseUntil:0,createdAt:record.createdAt},{session});
   if(receipt)await this.c('payments').updateOne({_id:receipt.attemptId},{$set:{status:'paid',bookingId:record.id,paymentId:receipt.paymentId}},{session});
   await saveBookingPayment(this,storedBooking,session,{attemptId:receipt?.attemptId,providerVerified:Boolean(receipt)});
