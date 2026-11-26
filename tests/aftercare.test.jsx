@@ -58,6 +58,8 @@ test('customer cancellation requires an explicit reason and policy acceptance an
       name: 'Request cancellation',
     }),
   );
+  expect(changed).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm cancellation request' }));
   await waitFor(() => expect(changed).toHaveBeenCalled());
   const [path, options] = fetch.mock.calls[0];
   expect(path).toBe('/api/user/bookings/' + record.id + '/cancellation');

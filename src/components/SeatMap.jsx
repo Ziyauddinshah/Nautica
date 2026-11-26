@@ -1,6 +1,6 @@
 /** @file React seat map view; authorization and authoritative state remain on the server. */
 import { useI18n } from '../i18n/I18nProvider.jsx';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { seatLayout } from '../domain/booking.js';
 export default function SeatMap({
   boat,
@@ -16,6 +16,7 @@ export default function SeatMap({
   const { t, locale } = useI18n();
   const [message, setMessage] = useState('');
   const seats = seatLayout(boat);
+  const grid = useRef(null);
   const columns = boat.type === 'Party pontoon' ? 4 : 2;
   const rows = Array.from(
     {
@@ -48,6 +49,9 @@ export default function SeatMap({
           {t(selected.length)} / {t(guests)}
         </span>
       </div>
+      <p className="demo-note">
+        {t('Keyboard: use arrow keys to move between available seats; Enter or Space selects.')}
+      </p>
       <div className="seat-legend">
         <span>
           <i aria-hidden="true">○</i> {t('Available')}
@@ -72,6 +76,7 @@ export default function SeatMap({
         </span>
       </div>
       <div
+        ref={grid}
         className={`seat-board ${columns === 4 ? 'pontoon' : 'pointed'}`}
         role="group"
         aria-label={t('{{v0}} numbered seating plan. Front at top, rear at bottom.', {
@@ -142,6 +147,39 @@ export default function SeatMap({
                           ? t(', selected')
                           : t(', available'),
                   })}
+                  onKeyDown={(event) => {
+                    if (
+                      !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(
+                        event.key,
+                      )
+                    )
+                      return;
+                    event.preventDefault();
+                    const index = seats.findIndex((item) => item.id === seat.id),
+                      step =
+                        event.key === 'ArrowUp'
+                          ? -columns
+                          : event.key === 'ArrowDown'
+                            ? columns
+                            : event.key === 'ArrowLeft'
+                              ? -1
+                              : 1;
+                    let next =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? seats.length - 1
+                          : index + step;
+                    const direction = event.key === 'End' ? -1 : step;
+                    while (next >= 0 && next < seats.length) {
+                      const button = grid.current?.querySelectorAll('.seat-button')[next];
+                      if (button && !button.disabled) {
+                        button.focus();
+                        break;
+                      }
+                      next += direction;
+                    }
+                  }}
                   onClick={() => toggle(seat.id)}
                 >
                   {seat.id}

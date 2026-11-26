@@ -1,4 +1,5 @@
 /** @file React customer account view; authorization and authoritative state remain on the server. */
+import UpcomingJourney from './UpcomingJourney.jsx';
 import { refundStatusText } from '../lib/refundStatus.js';
 import CancellationControls from './CancellationControls.jsx';
 import { smsStatusText } from '../lib/smsStatus.js';
@@ -34,6 +35,8 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
   const { t, locale } = useI18n();
   const backgroundRefresh = useBackgroundRefresh(Boolean(user));
   const [overview, setOverview] = useState({});
+  const [next, setNext] = useState(null);
+
   const summary = overview.owner === user?.id ? overview : {};
   const [dataState, setData] = useState({
       bookings: [],
@@ -95,6 +98,24 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
       });
     return () => controller.abort();
   }, [user?.id, offset, tab, refresh, backgroundRefresh]);
+  useEffect(() => {
+    if (!user) {
+      setNext(null);
+      return;
+    }
+    const controller = new AbortController();
+    request('/api/user/next-journey', { signal: controller.signal })
+      .then((result) => {
+        if (!controller.signal.aborted) setNext({ owner: user.id, record: result.journey || null });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setNext(null);
+          if (error.status === 401) onUser(null);
+        }
+      });
+    return () => controller.abort();
+  }, [user?.id, refresh, backgroundRefresh]);
   async function logout() {
     setBusy(true);
     try {
@@ -150,6 +171,9 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
   }
   return (
     <>
+      <a className="skip-link" href="#account-content">
+        {t('Skip to main content')}
+      </a>
       <header className="header">
         <LanguageSwitcher />
         <a className="brand" href="/">
@@ -170,7 +194,7 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
           )}
         </nav>
       </header>
-      <main className="account-main">
+      <main className="account-main" id="account-content" tabIndex={-1}>
         {user === undefined ? (
           <p role="status">{t('Checking your session\u2026')}</p>
         ) : !user ? (
@@ -214,6 +238,9 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
                 <strong>{t(summary.all ?? '—')}</strong>
               </div>
             </section>
+            {next?.owner === user.id && (
+              <UpcomingJourney record={next.record} onPass={setSelected} />
+            )}
             <div className="account-summary">
               {[
                 ['upcoming', 'Upcoming journeys', summary.upcoming],
@@ -239,9 +266,28 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
                 ['past', 'Previous bookings'],
                 ['payments', 'Payment history'],
                 ['security', 'Account security'],
-              ].map(([id, label]) => (
+              ].map(([id, label], index, items) => (
                 <button
                   key={id}
+                  tabIndex={tab === id ? 0 : -1}
+                  onKeyDown={(event) => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    const next =
+                      items[
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? items.length - 1
+                            : (index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) %
+                              items.length
+                      ][0];
+                    setOffset(0);
+                    setTab(next);
+                    event.currentTarget.parentElement
+                      .querySelectorAll('[role=tab]')
+                      [items.findIndex(([id]) => id === next)]?.focus();
+                  }}
                   className={`tab ${tab === id ? 'active' : ''}`}
                   role="tab"
                   aria-selected={tab === id}

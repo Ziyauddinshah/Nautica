@@ -1,5 +1,82 @@
 /** @file Feature message/condition catalog; no private provider settings are exposed. */
 export const hi = {
+  'Illustration · photo not supplied': 'चित्रांकन · तस्वीर उपलब्ध नहीं है',
+  'Hindi listing details (optional)': 'हिन्दी में नाव का विवरण (वैकल्पिक)',
+  'Hindi description': 'हिन्दी विवरण',
+  'Hindi boarding instructions': 'हिन्दी में चढ़ने के निर्देश',
+  'Hindi accessibility information': 'हिन्दी सुगम्यता जानकारी',
+  'Hindi safety information': 'हिन्दी सुरक्षा जानकारी',
+  'Demo booking: no real money will be refunded.': 'डेमो बुकिंग: असली पैसे की धनवापसी नहीं होगी।',
+
+  'Your next journey': 'आपकी अगली यात्रा',
+  'Journey in progress': 'यात्रा जारी है',
+  Departure: 'प्रस्थान',
+  'Confirm the exact meeting point with the operator before travel.':
+    'यात्रा से पहले संचालक से मिलने की सही जगह की पुष्टि करें।',
+  'Boarding is paused while your cancellation is reviewed.':
+    'रद्दीकरण की समीक्षा होने तक चढ़ने की अनुमति रुकी हुई है।',
+  'Open journey boarding pass': 'यात्रा का बोर्डिंग पास खोलें',
+  'Directions to boarding pier (Google Maps, new tab)': 'घाट का रास्ता (Google Maps, नया टैब)',
+  'Directions locate the pier, not an exact boarding berth.':
+    'यह रास्ता घाट तक है, नाव की सटीक चढ़ने की जगह तक नहीं।',
+  'Boat details and boarding information': 'नाव और चढ़ने की जानकारी',
+  'Ask the operator for more details about this boat.': 'इस नाव की और जानकारी संचालक से लें।',
+  'Boarding location': 'चढ़ने की जगह',
+  Amenities: 'सुविधाएँ',
+  'Ask the operator to confirm amenities.': 'सुविधाओं की पुष्टि संचालक से करें।',
+  'Accessibility and boarding assistance': 'सुगम्यता और चढ़ने में सहायता',
+  'Accessibility information has not been supplied. Confirm boarding assistance before booking.':
+    'सुगम्यता की जानकारी उपलब्ध नहीं है। बुकिंग से पहले चढ़ने में सहायता की पुष्टि करें।',
+  'Safety information': 'सुरक्षा की जानकारी',
+  'Follow the captain’s safety briefing and wear a life jacket.':
+    'कप्तान के सुरक्षा निर्देश मानें और लाइफ जैकेट पहनें।',
+  'Life jackets listed: {{count}}': 'दर्ज लाइफ जैकेट: {{count}}',
+  'Listing information is reviewed by an administrator. Confirm any specific needs with the operator; review does not guarantee accessibility.':
+    'सूची की जानकारी की प्रशासक समीक्षा करता है। विशेष जरूरतों की पुष्टि संचालक से करें; समीक्षा सुगम्यता की गारंटी नहीं है।',
+  'Public boat photo': 'नाव की सार्वजनिक तस्वीर',
+  'Upload a real boat photo without people, identity documents or private information. Metadata is removed. A new review is required.':
+    'लोगों, पहचान दस्तावेजों या निजी जानकारी के बिना असली नाव की तस्वीर अपलोड करें। मेटाडेटा हटाया जाता है। नई समीक्षा जरूरी है।',
+  'A listing photo is saved. It is public only while the boat is approved.':
+    'तस्वीर सहेजी गई है। नाव स्वीकृत रहने पर ही यह सार्वजनिक होती है।',
+  'Choose boat photo': 'नाव की तस्वीर चुनें',
+  'Photo description for screen readers': 'स्क्रीन रीडर के लिए तस्वीर का विवरण',
+  'I have publishing rights and confirm this photo contains no personal or private information.':
+    'मेरे पास प्रकाशन का अधिकार है और इस तस्वीर में व्यक्तिगत या निजी जानकारी नहीं है।',
+  'Processing photo…': 'तस्वीर तैयार हो रही है…',
+  'Save photo for review': 'समीक्षा के लिए तस्वीर सहेजें',
+  'Cancellation preview': 'रद्दीकरण का पूर्वावलोकन',
+  'Before you cancel': 'रद्द करने से पहले',
+  'Eligible to request a full refund': 'पूरी धनवापसी का अनुरोध करने के योग्य',
+  'Outside the online cancellation window': 'ऑनलाइन रद्दीकरण की समय सीमा समाप्त',
+  'Estimated refund if approved': 'स्वीकृति मिलने पर अनुमानित धनवापसी',
+  'Submit your request; boarding is paused.': 'अनुरोध भेजें; चढ़ने की अनुमति रोकी जाएगी।',
+  'An administrator reviews the request before seats are released.':
+    'सीटें खाली करने से पहले प्रशासक अनुरोध की समीक्षा करता है।',
+  'After approval, the payment provider processes the refund. Bank credit can take several working days.':
+    'स्वीकृति के बाद भुगतान प्रदाता धनवापसी करता है। बैंक खाते में आने में कुछ कार्य दिवस लग सकते हैं।',
+  'This is an estimate, not a completed refund. Eligibility is checked again when you submit.':
+    'यह अनुमान है, पूरी हुई धनवापसी नहीं। अनुरोध भेजते समय पात्रता फिर जाँची जाती है।',
+  'Confirm your cancellation request': 'रद्दीकरण अनुरोध की पुष्टि करें',
+  'Your request will pause boarding. It does not immediately return money.':
+    'आपका अनुरोध चढ़ने की अनुमति रोकेगा। इससे तुरंत पैसे वापस नहीं मिलते।',
+  'Confirm cancellation request': 'रद्दीकरण अनुरोध की पुष्टि करें',
+  'Keep my booking': 'मेरी बुकिंग बनाए रखें',
+  'Keyboard: use arrow keys to move between available seats; Enter or Space selects.':
+    'कीबोर्ड: उपलब्ध सीटों के बीच जाने के लिए तीर कुंजियाँ और चुनने के लिए Enter या Space दबाएँ।',
+  'Skip to main content': 'मुख्य सामग्री पर जाएँ',
+  'Review this photo for accuracy, privacy and publishing rights before approving the listing.':
+    'सूची स्वीकृत करने से पहले तस्वीर की सत्यता, गोपनीयता और प्रकाशन अधिकार की समीक्षा करें।',
+  'Use a JPEG or PNG boat photo up to 5 MB.': '5 MB तक की JPEG या PNG नाव की तस्वीर चुनें।',
+  'Unable to read photo.': 'तस्वीर पढ़ी नहीं जा सकी।',
+  'Confirm photo publishing rights and enter a useful photo description.':
+    'तस्वीर के प्रकाशन अधिकार की पुष्टि करें और उपयोगी विवरण लिखें।',
+  'Use a JPEG or PNG boat photo.': 'JPEG या PNG नाव की तस्वीर चुनें।',
+  'Photo scanning must be available before publishing.':
+    'प्रकाशन से पहले तस्वीर की सुरक्षा जाँच उपलब्ध होना जरूरी है।',
+  'The photo could not be processed. Use a smaller JPEG or PNG.':
+    'तस्वीर तैयार नहीं हो सकी। छोटी JPEG या PNG चुनें।',
+  'Enter valid accessibility and safety information.': 'सुगम्यता और सुरक्षा की सही जानकारी लिखें।',
+
   'Temporarily held': 'अस्थायी रूप से रोकी गई',
   ', temporarily held': ', अस्थायी रूप से रोकी गई',
   ', selected': ', चयनित',

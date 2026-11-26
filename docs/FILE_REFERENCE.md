@@ -22,6 +22,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Working on Nautica. |
 | [Dockerfile](../Dockerfile) | Production application image build; no production secrets belong in image layers. |
 | [FLEET_REGISTRATION.md](../FLEET_REGISTRATION.md) | Boat registration — India / Varanasi. |
+| [JOURNEY_LISTING_ACCESSIBILITY.md](../JOURNEY_LISTING_ACCESSIBILITY.md) | Journey shortcuts, cancellation preview and accessible boat listings. |
 | [LOCAL_SETUP.md](../LOCAL_SETUP.md) | Local testing. |
 | [OWNER_VERIFICATION.md](../OWNER_VERIFICATION.md) | Boat-owner identity and mobile verification. |
 | [README.md](../README.md) | Nautica — React, Node and shared MongoDB. |
@@ -118,6 +119,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [server/fleet.test.js](../server/fleet.test.js) | Regression tests for fleet behavior using isolated fixtures. |
 | [server/fleet/domain.js](../server/fleet/domain.js) | Pure validation and business rules for boat ownership, private document and approval workflows. |
 | [server/fleet/http.js](../server/fleet/http.js) | Authenticated HTTP endpoints and request validation for boat ownership, private document and approval workflows. |
+| [server/fleet/photo.js](../server/fleet/photo.js) | Validates public listing photos and removes metadata by decoding and re-encoding JPEG. |
 | [server/fleet/repository.js](../server/fleet/repository.js) | Persistence, authorization and transactional state changes for boat ownership, private document and approval workflows. |
 | [server/fleet/scanner.js](../server/fleet/scanner.js) | Private malware scanner integration for uploaded boat documents. |
 | [server/history.test.js](../server/history.test.js) | Regression tests for history behavior using isolated fixtures. |
@@ -155,6 +157,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [server/services/textbee.js](../server/services/textbee.js) | Private TextBee transport and sanitized SMS provider health observations. |
 | [server/sms.test.js](../server/sms.test.js) | Regression tests for sms behavior using isolated fixtures. |
 | [server/store.js](../server/store.js) | Legacy SQLite booking and admin fixture; not the production database runtime. |
+| [server/travel-experience.test.js](../server/travel-experience.test.js) | Public listing sanitization and refund estimates preserve private data boundaries. |
 | [server/users.js](../server/users.js) | Legacy SQLite customer/authentication fixture used by regression and migration tests. |
 | [server/users.test.js](../server/users.test.js) | Regression tests for users behavior using isolated fixtures. |
 | [server/verification.test.js](../server/verification.test.js) | Regression tests for verification behavior using isolated fixtures. |
@@ -174,6 +177,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/components/AuthForm.jsx](../src/components/AuthForm.jsx) | React auth form view; authorization and authoritative state remain on the server. |
 | [src/components/BoardingPass.jsx](../src/components/BoardingPass.jsx) | React boarding pass view; authorization and authoritative state remain on the server. |
 | [src/components/BoatArt.jsx](../src/components/BoatArt.jsx) | React boat art view; authorization and authoritative state remain on the server. |
+| [src/components/BoatDetails.jsx](../src/components/BoatDetails.jsx) | Public reviewed listing details with honest missing-information and photo fallbacks. |
 | [src/components/BookingDialog.jsx](../src/components/BookingDialog.jsx) | React booking dialog view; authorization and authoritative state remain on the server. |
 | [src/components/CancellationControls.jsx](../src/components/CancellationControls.jsx) | React cancellation controls view; authorization and authoritative state remain on the server. |
 | [src/components/CustomerAccount.jsx](../src/components/CustomerAccount.jsx) | React customer account view; authorization and authoritative state remain on the server. |
@@ -181,6 +185,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/components/DocumentRenewals.jsx](../src/components/DocumentRenewals.jsx) | React document renewals view; authorization and authoritative state remain on the server. |
 | [src/components/FleetPortal.jsx](../src/components/FleetPortal.jsx) | React fleet portal view; authorization and authoritative state remain on the server. |
 | [src/components/HoldCountdown.jsx](../src/components/HoldCountdown.jsx) | Accessible countdown based on server hold duration; expiry never proves payment failure. |
+| [src/components/ListingPhotoUpload.jsx](../src/components/ListingPhotoUpload.jsx) | Owner photo upload with explicit public-sharing consent, separate from legal documents. |
 | [src/components/OperationsDashboard.jsx](../src/components/OperationsDashboard.jsx) | React operations dashboard view; authorization and authoritative state remain on the server. |
 | [src/components/OwnerVerification.jsx](../src/components/OwnerVerification.jsx) | React owner verification view; authorization and authoritative state remain on the server. |
 | [src/components/PaymentForm.jsx](../src/components/PaymentForm.jsx) | React payment form view; authorization and authoritative state remain on the server. |
@@ -190,6 +195,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/components/ResetPassword.jsx](../src/components/ResetPassword.jsx) | React reset password view; authorization and authoritative state remain on the server. |
 | [src/components/SeatMap.jsx](../src/components/SeatMap.jsx) | React seat map view; authorization and authoritative state remain on the server. |
 | [src/components/TripSummary.jsx](../src/components/TripSummary.jsx) | React trip summary view; authorization and authoritative state remain on the server. |
+| [src/components/UpcomingJourney.jsx](../src/components/UpcomingJourney.jsx) | Nearest owned journey shortcut with pier directions and current boarding-pass access. |
 | [src/domain/boardingPass.js](../src/domain/boardingPass.js) | Public UI constants and presentation rules for boardingPass. |
 | [src/domain/booking.js](../src/domain/booking.js) | Trip, boat, seat and price rules shared by this layer. |
 | [src/domain/fleet.js](../src/domain/fleet.js) | Boat registration fields, document requirements and review checklist. |
@@ -199,6 +205,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/i18n/I18nProvider.jsx](../src/i18n/I18nProvider.jsx) | Provides English/Hindi language state and translated UI text. |
 | [src/i18n/catalog.js](../src/i18n/catalog.js) | Feature message/condition catalog; no private provider settings are exposed. |
 | [src/lib/api.js](../src/lib/api.js) | Same-origin browser API client with safe response handling and language selection. |
+| [src/lib/directions.js](../src/lib/directions.js) | Builds opt-in map links containing a boarding pier only, never guest or booking details. |
 | [src/lib/passExport.js](../src/lib/passExport.js) | Browser helper for pass export; keep private server settings out of this module. |
 | [src/lib/qr.js](../src/lib/qr.js) | Browser helper for qr; keep private server settings out of this module. |
 | [src/lib/razorpay.js](../src/lib/razorpay.js) | Browser hosted checkout; capture evidence and all merchant secrets remain on the server. |
@@ -233,5 +240,6 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [tests/sms.test.jsx](../tests/sms.test.jsx) | Regression tests for sms behavior using isolated fixtures. |
 | [tests/storage.test.js](../tests/storage.test.js) | Regression tests for storage behavior using isolated fixtures. |
 | [tests/synchronization.test.jsx](../tests/synchronization.test.jsx) | Regression tests for synchronization behavior using isolated fixtures. |
+| [tests/travelExperience.test.jsx](../tests/travelExperience.test.jsx) | Journey shortcuts, cancellation confirmation, listing privacy and keyboard access. |
 
 <!-- prettier-ignore-end -->

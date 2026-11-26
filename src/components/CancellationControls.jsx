@@ -10,7 +10,8 @@ export default function CancellationControls({ record, admin = false, onChanged 
     [accepted, setAccepted] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [boarding, setBoarding] = useState(null);
+    [boarding, setBoarding] = useState(null),
+    [reviewing, setReviewing] = useState(false);
   const info = record.cancellation;
   if (!info) return null;
   const refund = info.refund;
@@ -36,6 +37,7 @@ export default function CancellationControls({ record, admin = false, onChanged 
                 acceptPolicy: accepted,
               },
       });
+      setReviewing(false);
       setText('');
       setAccepted(false);
       onChanged?.();
@@ -67,6 +69,39 @@ export default function CancellationControls({ record, admin = false, onChanged 
           })}{' '}
           ({t('Local time at boarding pier')})
         </p>
+      )}
+      {!admin && record.status === 'confirmed' && info.status !== 'requested' && (
+        <div className="refund-preview" aria-label={t('Cancellation preview')}>
+          <h4>{t('Before you cancel')}</h4>
+          {record.payment?.status === 'demo_paid' && (
+            <p>{t('Demo booking: no real money will be refunded.')}</p>
+          )}
+          <p>
+            {t(
+              info.canRequest
+                ? 'Eligible to request a full refund'
+                : 'Outside the online cancellation window',
+            )}
+          </p>
+          <p>
+            {t('Estimated refund if approved')}:{' '}
+            <strong>{money(info.estimatedRefund ?? 0, 'INR', locale)}</strong>
+          </p>
+          <ol>
+            <li>{t('Submit your request; boarding is paused.')}</li>
+            <li>{t('An administrator reviews the request before seats are released.')}</li>
+            <li>
+              {t(
+                'After approval, the payment provider processes the refund. Bank credit can take several working days.',
+              )}
+            </li>
+          </ol>
+          <small>
+            {t(
+              'This is an estimate, not a completed refund. Eligibility is checked again when you submit.',
+            )}
+          </small>
+        </div>
       )}
       {info.status && (
         <p>
@@ -118,7 +153,11 @@ export default function CancellationControls({ record, admin = false, onChanged 
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            act(admin ? (info.status === 'requested' ? 'approve' : 'cancel') : 'request');
+            if (!admin) {
+              setReviewing(true);
+              return;
+            }
+            act(info.status === 'requested' ? 'approve' : 'cancel');
           }}
         >
           <label>
@@ -128,7 +167,10 @@ export default function CancellationControls({ record, admin = false, onChanged 
               minLength={10}
               maxLength={1000}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => {
+                setText(event.target.value);
+                setReviewing(false);
+              }}
             />
           </label>
           {!admin && (
@@ -136,7 +178,10 @@ export default function CancellationControls({ record, admin = false, onChanged 
               <input
                 type="checkbox"
                 checked={accepted}
-                onChange={(event) => setAccepted(event.target.checked)}
+                onChange={(event) => {
+                  setAccepted(event.target.checked);
+                  setReviewing(false);
+                }}
               />
               {t('I accept the cancellation policy and understand that approval is required.')}
             </label>
@@ -153,6 +198,26 @@ export default function CancellationControls({ record, admin = false, onChanged 
                 : 'Request cancellation',
             )}
           </button>
+          {!admin && reviewing && (
+            <div
+              className="cancel-confirmation"
+              role="group"
+              aria-label={t('Confirm your cancellation request')}
+            >
+              <p>{t('Your request will pause boarding. It does not immediately return money.')}</p>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !accepted || text.trim().length < 10}
+                onClick={() => act('request')}
+              >
+                {t('Confirm cancellation request')}
+              </button>
+              <button type="button" disabled={busy} onClick={() => setReviewing(false)}>
+                {t('Keep my booking')}
+              </button>
+            </div>
+          )}
           {admin && info.status === 'requested' && (
             <button
               type="button"

@@ -43,6 +43,17 @@ export function boatDetails(input) {
     input.amenities.some((item) => !text(item, 2, 60))
   )
     throw new ApiError(400, 'Enter valid amenities.');
+  for (const key of [
+    'accessibilityNotes',
+    'safetyNotes',
+    'descriptionHi',
+    'boardingInstructionsHi',
+    'accessibilityNotesHi',
+    'safetyNotesHi',
+  ]) {
+    if (input[key] !== undefined && input[key] !== '' && !text(input[key], 5, 600))
+      throw new ApiError(400, 'Enter valid accessibility and safety information.');
+  }
   // Seat labels are generated from the declared capacity; approval requires the actual layout proof.
   const result = {};
   for (const key of [
@@ -61,6 +72,15 @@ export function boatDetails(input) {
     'captainIncluded',
   ])
     result[key] = typeof input[key] === 'string' ? input[key].trim() : input[key];
+  result.accessibilityNotes = (input.accessibilityNotes || '').trim();
+  result.safetyNotes = (input.safetyNotes || '').trim();
+  for (const key of [
+    'descriptionHi',
+    'boardingInstructionsHi',
+    'accessibilityNotesHi',
+    'safetyNotesHi',
+  ])
+    result[key] = (input[key] || '').trim();
   result.amenities = [...new Set(input.amenities.map((value) => value.trim()))];
   result.timeZone = 'Asia/Kolkata';
   result.jurisdiction = 'IN-UP-Varanasi';
@@ -146,6 +166,19 @@ export function publicBoat(boat) {
     tone: d.tone,
     timeZone: d.timeZone,
     description: d.description,
+    accessibilityNotes: d.accessibilityNotes || '',
+    safetyNotes: d.safetyNotes || '',
+    descriptionHi: d.descriptionHi || '',
+    boardingInstructionsHi: d.boardingInstructionsHi || '',
+    accessibilityNotesHi: d.accessibilityNotesHi || '',
+    safetyNotesHi: d.safetyNotesHi || '',
+    lifeJackets: d.lifeJackets,
+    ...(boat.coverPhoto
+      ? {
+          photoUrl: '/api/boats/' + boat._id + '/photo?revision=' + boat.revision,
+          photoAlt: boat.coverPhoto.alt,
+        }
+      : {}),
     boardingInstructions: d.boardingInstructions,
     captainIncluded: true,
     seatPlan: seatLayout(d),
@@ -178,6 +211,8 @@ export function privateBoat(boat, actor) {
     status: boat.status,
     revision: boat.revision,
     details: boat.details,
+    hasPhoto: Boolean(boat.coverPhoto),
+    photoAlt: boat.coverPhoto?.alt || '',
     documents: boat.documents || {},
     pendingDocuments: Object.fromEntries(
       Object.entries(boat.pendingDocuments || {}).map(([key, value]) => {

@@ -54,3 +54,8 @@ Deploy the web branch, run `npm ci`, `npm test` and `npm run build`, then start 
 Register each real boat and obtain admin review. Existing sample IDs such as `b1` will no longer be sold; historical bookings stay intact. Do not map a historical sample ID onto an unrelated real boat. Reconcile any upcoming legacy bookings with their passengers and the actual operator. If an admin registers boats, create a separate reviewer using `npm run admin:create` as described in local setup.
 
 Owner verification is now mandatory: see [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md). Admins must register boats against a verified owner email. Legacy ownerless admin boats require an explicit owner link and fresh independent review. Missing/expired owner verification blocks new sales while preserving history.
+
+Reviewed public listings now support real cover photos, accessibility/safety notes
+and optional Hindi content. Photos are separate from private legal documents and
+need a clean scan and independent listing review. See
+[JOURNEY_LISTING_ACCESSIBILITY.md](JOURNEY_LISTING_ACCESSIBILITY.md).

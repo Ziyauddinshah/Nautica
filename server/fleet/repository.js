@@ -1,3 +1,4 @@
+import { listingPhoto } from './photo.js';
 /** @file Persistence, authorization and transactional state changes for boat ownership, private document and approval workflows. */
 import { enqueueNotice } from '../aftercare/notices.js';
 import { randomUUID, createHash } from 'node:crypto';
@@ -320,7 +321,34 @@ export class BoatRegistry {
       return privateBoat(boat, actor);
     });
   }
-  async update(id, actor, input) {
+  async uploadPhoto(id, actor, input) {
+    const initial = await this.load(id, actor);
+    this.checkRevision(initial, input.revision);
+    if (actor.role === 'admin' && initial.createdBy !== actorKey(actor))
+      throw new ApiError(403, 'Only the submitting owner or admin may upload listing photos.');
+    const photo = await listingPhoto(input, this.scan);
+    return this.update(id, actor, { revision: input.revision, details: initial.details }, photo);
+  }
+  async privatePhoto(id, actor) {
+    const boat = await this.load(id, actor);
+    if (!boat.coverPhoto) throw new ApiError(404, 'Photo not found.');
+    return Buffer.from(boat.coverPhoto.data, 'base64');
+  }
+  async publicPhoto(id) {
+    try {
+      await this.bookable(id, indiaDate());
+    } catch (error) {
+      if ([400, 404, 409].includes(error.status)) throw new ApiError(404, 'Photo not found.');
+      throw error;
+    }
+    const boat = await this.c('boats').findOne(
+      { _id: id, status: 'approved' },
+      { projection: { coverPhoto: 1 }, readConcern: { level: 'linearizable' }, maxTimeMS: 5000 },
+    );
+    if (!boat?.coverPhoto) throw new ApiError(404, 'Photo not found.');
+    return Buffer.from(boat.coverPhoto.data, 'base64');
+  }
+  async update(id, actor, input, photo = null) {
     return this.repo.transaction(async (session) => {
       const boat = await this.load(id, actor, session);
       this.checkRevision(boat, input.revision);
@@ -338,6 +366,7 @@ export class BoatRegistry {
           409,
           'Registration identity cannot be changed. Contact an administrator.',
         );
+      if (photo) boat.coverPhoto = photo;
       boat.details = details;
       boat.status = 'draft';
       boat.revision++;
@@ -349,6 +378,7 @@ export class BoatRegistry {
         {
           $set: {
             details,
+            ...(photo ? { coverPhoto: photo } : {}),
             status: boat.status,
             revision: boat.revision,
             review: null,

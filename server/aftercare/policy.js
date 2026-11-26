@@ -26,7 +26,16 @@ export function cancellationInfo(record, now = new Date()) {
     end = journeyEnd(record),
     departure = end ? new Date(+end - 3600000) : null,
     deadline = departure ? new Date(+departure - policy.cutoffHours * 3600000) : null;
+  const canRequest =
+    record.status === 'confirmed' &&
+    Boolean(deadline && now <= deadline) &&
+    record.cancellation?.status !== 'requested';
+  const amount = record.payment?.amount ?? record.pricing?.total ?? 0;
+  const paid = ['paid', 'demo_paid'].includes(record.payment?.status);
   return {
+    estimatedRefund: canRequest && paid && Number.isSafeInteger(amount) && amount >= 0 ? amount : 0,
+    currency: 'INR',
+    estimateOnly: true,
     policy,
     deadline: deadline?.toISOString() || null,
     canRequest:

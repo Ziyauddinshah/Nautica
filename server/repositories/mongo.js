@@ -600,6 +600,20 @@ export class MongoRepository {
       offset,
     };
   }
+  async nextJourney(userId) {
+    return this.transaction(async (session) => {
+      const history = await this.bookingHistory(userId, { view: 'upcoming' }, session),
+        record = history.records[0];
+      if (!record) return null;
+      const view = bookingView((await this.withPaymentRecords([record], session))[0]);
+      return {
+        ...view,
+        journeyState: +record.__ends - 3600000 <= +history.now ? 'in_progress' : 'upcoming',
+        departureAt: new Date(+record.__ends - 3600000).toISOString(),
+        endsAt: record.__ends.toISOString(),
+      };
+    });
+  }
   async userBookings(userId, query = {}) {
     return this.transaction(async (session) => {
       const history = await this.bookingHistory(userId, query, session),

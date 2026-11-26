@@ -165,6 +165,18 @@ export function createApp(
             throw new ApiError(400, 'Invalid JSON request.');
           }
         };
+        const photoMatch = url.pathname.match(/^\/api\/boats\/(BT-[A-F0-9]{16})\/photo$/);
+        if (req.method === 'GET' && photoMatch && repo.fleet) {
+          const bytes = await repo.fleet.publicPhoto(photoMatch[1]);
+          res.writeHead(200, {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': bytes.length,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          res.end(bytes);
+          return;
+        }
         if (req.method === 'GET' && url.pathname === '/api/boats')
           return send(200, repo.fleet ? await repo.fleet.catalog() : { boats: [] });
         if (url.pathname.startsWith('/api/owner/verification')) {
@@ -349,6 +361,10 @@ export function createApp(
             smsService?.kick();
             return send(200, { cancellation: result });
           }
+          if (req.method === 'GET' && url.pathname === '/api/user/next-journey')
+            return send(200, {
+              journey: repo.nextJourney ? await repo.nextJourney(user.id) : null,
+            });
           if (req.method === 'GET' && url.pathname === '/api/user/session')
             return send(200, { user });
           if (req.method === 'GET' && url.pathname === '/api/user/payments')

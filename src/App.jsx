@@ -1,4 +1,5 @@
 /** @file Coordinates public booking screens, route selection and application UI state. */
+import BoatDetails, { BoatPhoto } from './components/BoatDetails.jsx';
 import OperationsDashboard from './components/OperationsDashboard.jsx';
 import FleetPortal from './components/FleetPortal.jsx';
 import useBackgroundRefresh from './hooks/useBackgroundRefresh.js';
@@ -208,6 +209,9 @@ export default function App({ resetToken = null }) {
     );
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        {t('Skip to main content')}
+      </a>
       <header className="header">
         <LanguageSwitcher />
         <Brand />
@@ -269,7 +273,7 @@ export default function App({ resetToken = null }) {
           </button>
         </nav>
       </header>
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <section className="hero">
           <div className="hero-copy">
             <p className="eyebrow">
@@ -462,7 +466,7 @@ export default function App({ resetToken = null }) {
               found.map((boat) => (
                 <article className="boat-card" key={boat.id}>
                   <div className="vessel-art">
-                    <BoatArt boat={boat} />
+                    <BoatPhoto boat={boat} fallback={<BoatArt boat={boat} />} />
                     <span className="captain">{t('\u2713 CAPTAIN INCLUDED')}</span>
                   </div>
                   <div className="boat-content">
@@ -489,6 +493,7 @@ export default function App({ resetToken = null }) {
                         </span>
                       ))}
                     </div>
+                    <BoatDetails boat={boat} />
                     <div className="card-bottom">
                       <div className="price">
                         {t(N.money(boat.fare, currency, locale))}

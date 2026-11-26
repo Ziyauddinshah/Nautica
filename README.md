@@ -226,3 +226,6 @@ third-party access; see [SECURITY.md](SECURITY.md) for private vulnerability rep
 Booking usability: [CHECKOUT_EXPERIENCE.md](CHECKOUT_EXPERIENCE.md) explains the
 four-step mobile flow, seat-state symbols, real hold countdown and safe payment
 recovery.
+
+Journey shortcuts, refund previews, reviewed real-photo listings and accessibility:
+[JOURNEY_LISTING_ACCESSIBILITY.md](JOURNEY_LISTING_ACCESSIBILITY.md).

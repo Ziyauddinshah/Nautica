@@ -87,3 +87,17 @@ moved. See [checkout recovery](../CHECKOUT_EXPERIENCE.md).
 Availability additionally distinguishes `heldSeats` from `confirmedSeats`, while
 `bookedSeats` remains their union for existing clients. No per-seat customer or
 attempt identifiers are public.
+
+## Journey and listing additions
+
+`GET /api/user/next-journey` requires the customer session and returns only the
+nearest owned active journey (or `journey: null`). Cancellation projections add a
+server-derived INR refund estimate; final eligibility is rechecked on submission.
+
+`POST /api/owner/boats/:id/photos` (or the submitting admin's `/api/admin/fleet`
+equivalent) accepts a bounded JPEG/PNG base64 photo, MIME, description, consent and
+revision. Existing authenticated ownership, same-origin, throttle, review and
+active-booking restrictions apply. `GET` on that authenticated path is a private
+review preview. `GET /api/boats/:id/photo` serves a sanitized JPEG only for currently
+approved/bookable listings. Legal-document files are never reclassified as photos.
+See [the feature guide](../JOURNEY_LISTING_ACCESSIBILITY.md).

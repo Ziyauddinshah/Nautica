@@ -74,6 +74,11 @@ export default function BookingDialog({
   }, []);
   useEffect(() => {
     dialogRef.current.scrollTop = 0;
+    const title = dialogRef.current.querySelector('#flow-title');
+    if (title) {
+      title.setAttribute('tabindex', '-1');
+      title.focus({ preventScroll: true });
+    }
   }, [stage]);
   useEffect(() => {
     if (!trip || activePass) return;

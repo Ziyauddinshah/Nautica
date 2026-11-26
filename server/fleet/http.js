@@ -28,10 +28,21 @@ export async function fleetRequest({ req, res, url, repo, actor, body, send, thr
     }
   }
   const match = path.match(
-    /^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review|owner|renewals)(?:\/([a-f0-9-]{36}))?)?$/,
+    /^\/(BT-[A-F0-9]{16})(?:\/(documents|submit|withdraw|review|owner|renewals|photos)(?:\/([a-f0-9-]{36}))?)?$/,
   );
   if (!match) return false;
   const [, id, action, documentId] = match;
+  if (req.method === 'GET' && action === 'photos' && !documentId) {
+    const bytes = await repo.fleet.privatePhoto(id, actor);
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': bytes.length,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(bytes);
+    return true;
+  }
   if (req.method === 'GET' && action === 'documents' && documentId) {
     const doc = await repo.fleet.download(id, documentId, actor);
     res.writeHead(200, {
@@ -54,7 +65,7 @@ export async function fleetRequest({ req, res, url, repo, actor, body, send, thr
   }
   if (req.method !== 'POST' || documentId) return false;
   await throttle(req, 'fleet-write', actor.id);
-  const input = await body(action === 'documents' ? 8 * 1024 * 1024 : 16384);
+  const input = await body(['documents', 'photos'].includes(action) ? 8 * 1024 * 1024 : 16384);
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw new ApiError(400, 'Invalid boat request.');
   const method =
@@ -62,6 +73,7 @@ export async function fleetRequest({ req, res, url, repo, actor, body, send, thr
       renewals: 'reviewRenewals',
       owner: 'assignOwner',
       documents: 'upload',
+      photos: 'uploadPhoto',
       submit: 'submit',
       withdraw: 'withdraw',
       review: 'review',

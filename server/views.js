@@ -8,7 +8,16 @@ const pick = (object, keys) =>
     keys.filter((key) => object?.[key] !== undefined).map((key) => [key, object[key]]),
   );
 const boatView = (boat) =>
-  pick(boat, ['id', 'name', 'pier', 'type', 'capacity', 'timeZone', 'boardingInstructions']);
+  pick(boat, [
+    'id',
+    'name',
+    'pier',
+    'type',
+    'capacity',
+    'timeZone',
+    'boardingInstructions',
+    'boardingInstructionsHi',
+  ]);
 export const passView = (pass) => ({
   ...pick(pass, [
     'id',
@@ -72,7 +81,15 @@ export function bookingView(record, { admin = false, notifications = [] } = {}) 
     ...pick(record, ['id', 'status', 'createdAt', ...(admin ? ['bookingMode'] : [])]),
     customer: pick(record.customer, ['name', 'email', 'phone']),
     boat: {
-      ...pick(record.boat, ['id', 'name', 'pier', 'type', 'capacity']),
+      ...pick(record.boat, [
+        'id',
+        'name',
+        'pier',
+        'type',
+        'capacity',
+        'boardingInstructions',
+        'boardingInstructionsHi',
+      ]),
       timeZone: boatZone(record.boat),
     },
     trip: pick(record.trip, ['date', 'slot', 'guests', 'seats']),

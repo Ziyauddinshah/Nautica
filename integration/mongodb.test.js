@@ -2518,3 +2518,113 @@ test('checkout UX exposes held versus confirmed seats and ownership-scoped recov
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('reviewed listing photos stay private until approval and journey shortcuts are owner scoped', async () => {
+  const sharp = (await import('sharp')).default,
+    { a, b } = await fixture(),
+    user = (await a.registerUser(account())).user,
+    other = (await a.registerUser(account())).user,
+    actor = { role: 'owner', id: user.id };
+  let boat = await documented(
+    a,
+    actor,
+    fleetDetails({
+      accessibilityNotes: 'Step access; ask the operator about assistance.',
+      safetyNotes: 'Wear a fitted life jacket and follow the captain.',
+      descriptionHi: 'गंगा यात्रा के लिए पंजीकृत नाव।',
+      boardingInstructionsHi: 'निर्धारित घाट पर कप्तान से मिलें।',
+    }),
+  );
+  const image = await sharp({
+      create: { width: 12, height: 12, channels: 3, background: '#336677' },
+    })
+      .png()
+      .toBuffer(),
+    photo = {
+      revision: boat.revision,
+      data: image.toString('base64'),
+      mime: 'image/png',
+      consent: true,
+      alt: 'The real boat moored at its boarding pier',
+    };
+  await assert.rejects(a.fleet.uploadPhoto(boat.id, { role: 'owner', id: other.id }, photo), {
+    status: 404,
+  });
+  a.fleet.scan = async () => 'clean';
+  boat = await a.fleet.uploadPhoto(boat.id, actor, photo);
+  assert.equal(boat.status, 'draft');
+  assert.equal(boat.hasPhoto, true);
+  assert.equal(boat.coverPhoto, undefined);
+  assert.ok((await a.fleet.privatePhoto(boat.id, actor)).length > 0);
+  await assert.rejects(a.fleet.privatePhoto(boat.id, { role: 'owner', id: other.id }), {
+    status: 404,
+  });
+  await assert.rejects(b.fleet.publicPhoto(boat.id), { status: 404 });
+  boat = await a.fleet.submit(boat.id, actor, { revision: boat.revision, declaration: true });
+  boat = await a.fleet.review(
+    boat.id,
+    { role: 'admin', id: 'photo-reviewer' },
+    { ...fleetReview, revision: boat.revision },
+  );
+  const listing = (await b.fleet.catalog()).boats.find((row) => row.id === boat.id);
+  assert.ok(listing.photoUrl);
+  assert.equal(listing.descriptionHi, 'गंगा यात्रा के लिए पंजीकृत नाव।');
+  assert.match(listing.accessibilityNotes, /Step access/);
+  assert.equal(listing.operatorName, undefined);
+  assert.equal(listing.documents, undefined);
+  assert.ok((await b.fleet.publicPhoto(boat.id)).length > 0);
+  const pass = await a.createBooking(
+    booking(user, { boatId: boat.id, date: localDate(new Date(Date.now() + 3 * 86400000)) }),
+    'seats',
+    user,
+  );
+  const journey = await b.nextJourney(user.id);
+  assert.equal(journey.id, pass.id);
+  assert.equal(journey.boat.boardingInstructions, fleetDetails().boardingInstructions);
+  assert.ok(journey.departureAt);
+  assert.equal(await b.nextJourney(other.id), null);
+  assert.equal(journey.cancellation.estimatedRefund, 126000);
+  const server = createApp(null, { repository: b });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const ownerToken = (await a.loginUser({ email: user.email, password: 'strong-test-passphrase' }))
+      .token,
+    otherToken = (await a.loginUser({ email: other.email, password: 'strong-test-passphrase' }))
+      .token;
+  try {
+    const publicImage = await fetch(base + listing.photoUrl);
+    assert.equal(publicImage.status, 200);
+    assert.equal(publicImage.headers.get('content-type'), 'image/jpeg');
+    assert.equal(publicImage.headers.get('cache-control'), 'no-store');
+    assert.equal((await fetch(base + '/api/owner/boats/' + boat.id + '/photos')).status, 401);
+    assert.equal(
+      (
+        await fetch(base + '/api/owner/boats/' + boat.id + '/photos', {
+          headers: { Cookie: 'nautica_user=' + otherToken },
+        })
+      ).status,
+      404,
+    );
+    const own = await fetch(base + '/api/user/next-journey', {
+      headers: { Cookie: 'nautica_user=' + ownerToken },
+    });
+    assert.equal((await own.json()).journey.id, pass.id);
+    const stranger = await fetch(base + '/api/user/next-journey', {
+      headers: { Cookie: 'nautica_user=' + otherToken },
+    });
+    assert.equal((await stranger.json()).journey, null);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  await assert.rejects(a.fleet.uploadPhoto(boat.id, actor, { ...photo, revision: boat.revision }), {
+    status: 409,
+  });
+  await a.fleet.review(
+    boat.id,
+    { role: 'admin', id: 'photo-reviewer' },
+    { action: 'suspend', notes: 'Suspend pending operational review.', revision: boat.revision },
+  );
+  await assert.rejects(b.fleet.publicPhoto(boat.id), { status: 404 });
+});

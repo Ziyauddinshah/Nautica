@@ -1,4 +1,5 @@
 /** @file React fleet portal view; authorization and authoritative state remain on the server. */
+import ListingPhotoUpload from './ListingPhotoUpload.jsx';
 import AdminSignIn from './AdminSignIn.jsx';
 import DocumentRenewals from './DocumentRenewals.jsx';
 import DocumentReminders from './DocumentReminders.jsx';
@@ -129,7 +130,7 @@ export default function FleetPortal({ admin = false, user, onUser }) {
   async function mutate(action, body) {
     const result = await request(base + '/' + boat.id + (action ? '/' + action : ''), {
       method: 'POST',
-      ...(action === 'documents'
+      ...(['documents', 'photos'].includes(action)
         ? {
             signal: AbortSignal.timeout(60000),
           }
@@ -153,7 +154,7 @@ export default function FleetPortal({ admin = false, user, onUser }) {
       {t(label)}
       <input
         required
-        value={details[key]}
+        value={details[key] || ''}
         onChange={(event) =>
           setDetails({
             ...details,
@@ -269,6 +270,20 @@ export default function FleetPortal({ admin = false, user, onUser }) {
                         {boat.revision}
                       </p>
                     )}
+                    {boat?.hasPhoto && (
+                      <figure>
+                        <img
+                          className="review-photo"
+                          src={base + '/' + boat.id + '/photos?revision=' + boat.revision}
+                          alt={boat.photoAlt || boat.details.name}
+                        />
+                        <figcaption>
+                          {t(
+                            'Review this photo for accuracy, privacy and publishing rights before approving the listing.',
+                          )}
+                        </figcaption>
+                      </figure>
+                    )}
                     {(creating || editable) && (
                       <form
                         className="fleet-details"
@@ -280,6 +295,7 @@ export default function FleetPortal({ admin = false, user, onUser }) {
                                 method: 'POST',
                                 body: {
                                   ...details,
+                                  amenities: details.amenities.filter((value) => value.trim()),
                                   ...(admin
                                     ? {
                                         ownerEmail,
@@ -292,7 +308,10 @@ export default function FleetPortal({ admin = false, user, onUser }) {
                               setCreating(false);
                             } else
                               await mutate('', {
-                                details,
+                                details: {
+                                  ...details,
+                                  amenities: details.amenities.filter((value) => value.trim()),
+                                },
                               });
                           });
                         }}
@@ -402,21 +421,30 @@ export default function FleetPortal({ admin = false, user, onUser }) {
                             }
                           />
                         </label>
-                        {['description', 'boardingInstructions'].map((key) => (
+                        {[
+                          'description',
+                          'boardingInstructions',
+                          'accessibilityNotes',
+                          'safetyNotes',
+                        ].map((key) => (
                           <label key={key}>
                             {t(
-                              key === 'description'
-                                ? 'Public description'
-                                : 'Boarding instructions',
+                              {
+                                description: 'Public description',
+                                boardingInstructions: 'Boarding instructions',
+                                accessibilityNotes: 'Accessibility and boarding assistance',
+                                safetyNotes: 'Safety information',
+                              }[key],
                             )}
                             <textarea
-                              required
+                              required={['description', 'boardingInstructions'].includes(key)}
                               minLength={key === 'description' ? 20 : 10}
                               maxLength={key === 'description' ? 1500 : 600}
-                              value={details[key]}
+                              value={details[key] || ''}
                               onChange={(e) =>
                                 setDetails({
                                   ...details,
+                                  amenities: details.amenities.filter((value) => value.trim()),
                                   [key]: e.target.value,
                                 })
                               }
@@ -429,6 +457,54 @@ export default function FleetPortal({ admin = false, user, onUser }) {
                             'A qualified captain is required. The numbered seat plan must match the actual boat and certified passenger capacity.',
                           )}
                         </p>
+                        <details>
+                          <summary>{t('Hindi listing details (optional)')}</summary>
+                          {[
+                            'description',
+                            'boardingInstructions',
+                            'accessibilityNotes',
+                            'safetyNotes',
+                          ].map((key) => (
+                            <label key={key}>
+                              {t(
+                                {
+                                  description: 'Hindi description',
+                                  boardingInstructions: 'Hindi boarding instructions',
+                                  accessibilityNotes: 'Hindi accessibility information',
+                                  safetyNotes: 'Hindi safety information',
+                                }[key],
+                              )}
+                              <textarea
+                                lang="hi"
+                                value={details[key + 'Hi'] || ''}
+                                minLength={5}
+                                maxLength={600}
+                                onChange={(e) =>
+                                  setDetails({ ...details, [key + 'Hi']: e.target.value })
+                                }
+                              />
+                            </label>
+                          ))}
+                        </details>
+                        <label>
+                          {t('Amenities (comma separated)')}
+                          <input
+                            value={details.amenities.join(', ')}
+                            onChange={(e) =>
+                              setDetails({
+                                ...details,
+                                amenities: e.target.value.split(',').map((value) => value.trim()),
+                              })
+                            }
+                          />
+                        </label>
+                        {!creating && boat && (
+                          <ListingPhotoUpload
+                            boat={boat}
+                            disabled={busy}
+                            onUpload={(input) => mutate('photos', input)}
+                          />
+                        )}
                         <button className="primary" disabled={busy || (!admin && !ownerVerified)}>
                           {t(creating ? 'Create draft' : 'Save details as draft')}
                         </button>
