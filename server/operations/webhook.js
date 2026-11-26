@@ -1,3 +1,4 @@
+/** @file HTTPS operational webhook transport with safe payloads and stable event identity. */
 import { ApiError } from '../errors.js';
 export function operationsWebhook(env = process.env, transport = fetch) {
   const target = env.OPERATIONS_WEBHOOK_URL,
@@ -5,7 +6,13 @@ export function operationsWebhook(env = process.env, transport = fetch) {
   let enabled = false;
   try {
     const url = new URL(target);
-    enabled = url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && (!key || key.length >= 32 && !/[\r\n]/.test(key));
+    enabled =
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      (!key || (key.length >= 32 && !/[\r\n]/.test(key)));
   } catch {}
   return {
     enabled,
@@ -19,17 +26,19 @@ export function operationsWebhook(env = process.env, transport = fetch) {
           headers: {
             'Content-Type': 'application/json',
             'Idempotency-Key': id,
-            ...(key ? {
-              Authorization: 'Bearer ' + key
-            } : {})
+            ...(key
+              ? {
+                  Authorization: 'Bearer ' + key,
+                }
+              : {}),
           },
-          body: JSON.stringify(event)
+          body: JSON.stringify(event),
         });
         if (!response.ok) throw new Error();
         return true;
       } catch {
         throw new ApiError(503, 'Operational alert delivery is unavailable.');
       }
-    }
+    },
   };
 }

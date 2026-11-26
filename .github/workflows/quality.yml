@@ -1,0 +1,31 @@
+name: Code quality and privacy checks
+on:
+  push:
+    branches: [web]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/mongodb-binaries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .cache/mongodb-binaries
+          key: mongodb-linux-8.0.16-${{ runner.arch }}
+      - run: npm run format:check
+      - run: npm run docs:check
+      - run: npm run security:check
+      - run: npm test
+      - run: npm run test:mongodb
+      - run: npm run test:recovery
+      - run: npm run build

@@ -1,10 +1,11 @@
+/** @file Background coordination for cancellation, refund and document reminder jobs, with bounded work and graceful stopping. */
 // Every replica may run this worker: refund claims and expiry-scan leases live in MongoDB.
 export function aftercareWorker({
   refunds,
   reminders,
   emailService,
   smsService,
-  remindersEnabled = true
+  remindersEnabled = true,
 }) {
   let running = null,
     timer,
@@ -13,22 +14,24 @@ export function aftercareWorker({
     if (running || stopped) return running;
     running = (async () => {
       await refunds.drain({
-        shouldStop: () => stopped
+        shouldStop: () => stopped,
       });
       if (remindersEnabled && !stopped) await reminders.run(undefined, () => stopped);
       emailService?.kick();
       smsService?.kick();
       return {
-        ok: true
+        ok: true,
       };
-    })().catch(() => {
-      console.error('Aftercare worker paused; durable tasks remain available.');
-      return {
-        ok: false
-      };
-    }).finally(() => {
-      running = null;
-    });
+    })()
+      .catch(() => {
+        console.error('Aftercare worker paused; durable tasks remain available.');
+        return {
+          ok: false,
+        };
+      })
+      .finally(() => {
+        running = null;
+      });
     return running;
   }
   return {
@@ -43,6 +46,6 @@ export function aftercareWorker({
       stopped = true;
       clearInterval(timer);
       await running;
-    }
+    },
   };
 }

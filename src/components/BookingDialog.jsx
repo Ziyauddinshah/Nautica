@@ -1,10 +1,11 @@
-import LanguageSwitcher, { useI18n } from "../i18n/I18nProvider.jsx";
+/** @file React booking dialog view; authorization and authoritative state remain on the server. */
+import LanguageSwitcher, { useI18n } from '../i18n/I18nProvider.jsx';
 import { useEffect, useRef, useState } from 'react';
 import * as N from '../domain/booking.js';
 import SeatMap from './SeatMap.jsx';
 import { TripSummary, PriceBreakdown } from './TripSummary.jsx';
 import PaymentForm, { emptyDraft } from './PaymentForm.jsx';
-import {payRazorpay} from '../lib/razorpay.js';
+import { payRazorpay } from '../lib/razorpay.js';
 import { request, getAvailability, bookSeats } from '../lib/api.js';
 import BoardingPass from './BoardingPass.jsx';
 export default function BookingDialog({
@@ -15,26 +16,38 @@ export default function BookingDialog({
   onClose,
   onBook,
   user,
-  onAuthExpired
+  onAuthExpired,
 }) {
-  const {
-    t,
-    locale
-  } = useI18n();
-  const [paymentConfig,setPaymentConfig]=useState(null);
-  useEffect(()=>{let current=true;request('/api/payments/config').then(value=>{if(current)setPaymentConfig(value);}).catch(()=>{if(current)setPaymentConfig({mode:'disabled',enabled:false});});return()=>{current=false;};},[]);
+  const { t, locale } = useI18n();
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  useEffect(() => {
+    let current = true;
+    request('/api/payments/config')
+      .then((value) => {
+        if (current) setPaymentConfig(value);
+      })
+      .catch(() => {
+        if (current) setPaymentConfig({ mode: 'disabled', enabled: false });
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
   const dialogRef = useRef(null);
   const timerRef = useRef(null);
   const payLock = useRef(false);
   const [stage, setStage] = useState(flow.kind === 'booking' ? 'review' : flow.kind);
   const [trip, setTrip] = useState(flow.trip || null);
   const [activePass, setActivePass] = useState(flow.booking || null);
-  useEffect(()=>{const latest=passes?.find(pass=>pass.id===activePass?.id);if(latest&&latest!==activePass)setActivePass(latest);},[passes,activePass?.id]);
+  useEffect(() => {
+    const latest = passes?.find((pass) => pass.id === activePass?.id);
+    if (latest && latest !== activePass) setActivePass(latest);
+  }, [passes, activePass?.id]);
   const [draft, setDraft] = useState(() => ({
     ...emptyDraft(),
     name: user?.name || '',
     email: user?.email || '',
-    phone: user?.phone || ''
+    phone: user?.phone || '',
   }));
   const [error, setError] = useState('');
   const [booked, setBooked] = useState([]);
@@ -42,7 +55,7 @@ export default function BookingDialog({
   const [refreshKey, setRefreshKey] = useState(0);
   const requestKey = useRef(crypto.randomUUID());
   const alive = useRef(true);
-  const boat = trip && (flow.boat || trip.boat || N.boats.find(item => item.id === trip.boatId));
+  const boat = trip && (flow.boat || trip.boat || N.boats.find((item) => item.id === trip.boatId));
   const processing = stage === 'processing';
   useEffect(() => {
     alive.current = true;
@@ -70,12 +83,14 @@ export default function BookingDialog({
         if (!current) return;
         setBooked(result.bookedSeats);
         setAvailabilityState('ready');
-        setTrip(previous => {
-          const seats = previous.seats.filter(seat => !result.bookedSeats.includes(seat));
-          return seats.length === previous.seats.length ? previous : {
-            ...previous,
-            seats
-          };
+        setTrip((previous) => {
+          const seats = previous.seats.filter((seat) => !result.bookedSeats.includes(seat));
+          return seats.length === previous.seats.length
+            ? previous
+            : {
+                ...previous,
+                seats,
+              };
         });
       } catch (error) {
         if (current && error.name !== 'AbortError') {
@@ -111,7 +126,10 @@ export default function BookingDialog({
       dialogRef.current.querySelector('.seat-button')?.focus();
       return;
     }
-    if(!paymentConfig?.enabled){setError('Online booking is currently unavailable.');return;}
+    if (!paymentConfig?.enabled) {
+      setError('Online booking is currently unavailable.');
+      return;
+    }
     setError('');
     setStage('payment');
   }
@@ -126,7 +144,7 @@ export default function BookingDialog({
       setStage('review');
       return;
     }
-    if (availabilityState !== 'ready' || trip.seats.some(seat => booked.includes(seat))) {
+    if (availabilityState !== 'ready' || trip.seats.some((seat) => booked.includes(seat))) {
       setError('Seat availability changed. Choose your seats again.');
       setStage('review');
       return;
@@ -139,18 +157,23 @@ export default function BookingDialog({
       guests: trip.guests,
       seats: [...trip.seats],
       extras: [...trip.extras],
-      requestKey: requestKey.current
+      requestKey: requestKey.current,
     };
     payLock.current = true;
     setStage('processing');
     setError('');
     timerRef.current = setTimeout(async () => {
       try {
-        const booking = paymentConfig?.mode==='razorpay'?await payRazorpay(payload,locale):await bookSeats(payload);
+        const booking =
+          paymentConfig?.mode === 'razorpay'
+            ? await payRazorpay(payload, locale)
+            : await bookSeats(payload);
         if (!alive.current) return;
         try {
           onBook(booking);
-        } catch {/* The server booking remains valid even if the offline cache is full. */}
+        } catch {
+          /* The server booking remains valid even if the offline cache is full. */
+        }
         setActivePass(booking);
         setDraft(emptyDraft());
         setStage('confirmed');
@@ -163,12 +186,12 @@ export default function BookingDialog({
         }
         if (error.status === 409) {
           setBooked(error.data.bookedSeats || []);
-          setTrip(previous => ({
+          setTrip((previous) => ({
             ...previous,
-            seats: []
+            seats: [],
           }));
           setStage('review');
-          setRefreshKey(key => key + 1);
+          setRefreshKey((key) => key + 1);
           requestKey.current = crypto.randomUUID();
         } else setStage('payment');
       } finally {
@@ -176,41 +199,196 @@ export default function BookingDialog({
       }
     }, 2000);
   }
-  return <dialog id="flow" ref={dialogRef} aria-labelledby="flow-title" onCancel={event => {
-    event.preventDefault();
-    close();
-  }}>
-    <div className="dialog-top"><LanguageSwitcher /><span className="small-brand">{t("\u2693 NAUTICA")}</span><button className="quiet" disabled={processing} onClick={onCurrency} aria-label={t("Switch currency")}>{currency === 'INR' ? t('₹ INR') : t('$ USD')} ⇄</button><button className="icon-button" disabled={processing} onClick={close} aria-label={t("Close booking")}>✕</button></div>
-    <div id="flow-body">
-      {stage === 'review' && <>
-        <p className="steps">{t("01 / YOUR VOYAGE")}</p><h2 id="flow-title" className="dialog-title">{t("Make it yours.")}</h2><p className="subtitle">{t("A few thoughtful touches for a memorable trip.")}</p>
-        <TripSummary boat={boat} trip={trip} /><SeatMap boat={boat} guests={trip.guests} selected={trip.seats} error={error} booked={booked} loading={availabilityState === 'loading'} unavailable={availabilityState === 'error'} onChange={seats => {
-          setTrip({
-            ...trip,
-            seats
-          });
-          setError('');
-          requestKey.current = crypto.randomUUID();
-        }} />
-        <button type="button" className="back-link" onClick={() => setRefreshKey(key => key + 1)}>{t("Refresh seat availability")}</button>
-        <div className="extras">{N.extras.map(extra => <label className="addon" key={extra.id}><input type="checkbox" checked={trip.extras.includes(extra.id)} disabled={extra.id === 'safety'} onChange={event => setTrip({
-              ...trip,
-              extras: event.target.checked ? [...trip.extras, extra.id] : trip.extras.filter(id => id !== extra.id)
-            })} /><span className="addon-text"><strong>{t(extra.name)}</strong><small>{t(extra.detail)}</small></span><span>{extra.price ? t("+ {{v0}}", {
-                v0: t(N.money(extra.price, currency, locale))
-              }) : t('Included')}</span></label>)}</div>
-        <PriceBreakdown boat={boat} trip={trip} currency={currency} /><button className="primary wide" onClick={proceed}>{t("Proceed to payment \xB7")} {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))} →</button><p className="demo-note">{t("Group trip fare. Your captain is included. Only your selected seats are reserved.")}</p>
-      </>}
-      {stage === 'payment' && <PaymentForm cancellationPolicy={paymentConfig?.cancellationPolicy} paymentMode={paymentConfig?.mode} boat={boat} trip={trip} currency={currency} draft={draft} onDraft={setDraft} accountEmail={user?.email} onPay={pay} onBack={() => {
-        setError('');
-        setStage('review');
-      }} error={error} />}
-      {processing && <div className="processing" role="status"><div className="spinner" /><h2 id="flow-title" className="dialog-title">{t("A moment, then the horizon.")}</h2><p className="subtitle">{t(paymentConfig?.mode==='razorpay'?'Waiting for payment confirmation…':'Simulating secure payment processing…')}</p></div>}
-      {stage === 'passes' && <><p className="steps">{t("YOUR JOURNEYS")}</p><h2 id="flow-title" className="dialog-title">{t("My boarding passes.")}</h2><p className="subtitle">{t("Your signed-in account bookings. Download passes for offline access.")}</p><div className="pass-list">{passes.length ? passes.map(pass => <button key={pass.id} className="saved-pass" onClick={() => {
-            setActivePass(pass);
-            setStage('pass');
-          }}><strong>{t((pass.boat || N.boats.find(boat => boat.id === pass.boatId))?.name || pass.boatId)}</strong><small>{t(pass.date)} · {t(pass.slot)}<br />{pass.id} · {t(pass.guests)} {t("guests \xB7")} {t(N.money(pass.total, currency, locale))}</small></button>) : <div className="empty"><h3>{t("Your horizon is waiting.")}</h3><p>{t("Your first boarding pass will appear here after booking.")}</p></div>}</div></>}
-      {(stage === 'confirmed' || stage === 'pass') && <BoardingPass booking={activePass} currency={currency} confirmed={stage === 'confirmed'} onExplore={close} />}
-    </div>
-  </dialog>;
+  return (
+    <dialog
+      id="flow"
+      ref={dialogRef}
+      aria-labelledby="flow-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+    >
+      <div className="dialog-top">
+        <LanguageSwitcher />
+        <span className="small-brand">{t('\u2693 NAUTICA')}</span>
+        <button
+          className="quiet"
+          disabled={processing}
+          onClick={onCurrency}
+          aria-label={t('Switch currency')}
+        >
+          {currency === 'INR' ? t('₹ INR') : t('$ USD')} ⇄
+        </button>
+        <button
+          className="icon-button"
+          disabled={processing}
+          onClick={close}
+          aria-label={t('Close booking')}
+        >
+          ✕
+        </button>
+      </div>
+      <div id="flow-body">
+        {stage === 'review' && (
+          <>
+            <p className="steps">{t('01 / YOUR VOYAGE')}</p>
+            <h2 id="flow-title" className="dialog-title">
+              {t('Make it yours.')}
+            </h2>
+            <p className="subtitle">{t('A few thoughtful touches for a memorable trip.')}</p>
+            <TripSummary boat={boat} trip={trip} />
+            <SeatMap
+              boat={boat}
+              guests={trip.guests}
+              selected={trip.seats}
+              error={error}
+              booked={booked}
+              loading={availabilityState === 'loading'}
+              unavailable={availabilityState === 'error'}
+              onChange={(seats) => {
+                setTrip({
+                  ...trip,
+                  seats,
+                });
+                setError('');
+                requestKey.current = crypto.randomUUID();
+              }}
+            />
+            <button
+              type="button"
+              className="back-link"
+              onClick={() => setRefreshKey((key) => key + 1)}
+            >
+              {t('Refresh seat availability')}
+            </button>
+            <div className="extras">
+              {N.extras.map((extra) => (
+                <label className="addon" key={extra.id}>
+                  <input
+                    type="checkbox"
+                    checked={trip.extras.includes(extra.id)}
+                    disabled={extra.id === 'safety'}
+                    onChange={(event) =>
+                      setTrip({
+                        ...trip,
+                        extras: event.target.checked
+                          ? [...trip.extras, extra.id]
+                          : trip.extras.filter((id) => id !== extra.id),
+                      })
+                    }
+                  />
+                  <span className="addon-text">
+                    <strong>{t(extra.name)}</strong>
+                    <small>{t(extra.detail)}</small>
+                  </span>
+                  <span>
+                    {extra.price
+                      ? t('+ {{v0}}', {
+                          v0: t(N.money(extra.price, currency, locale)),
+                        })
+                      : t('Included')}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <PriceBreakdown boat={boat} trip={trip} currency={currency} />
+            <button className="primary wide" onClick={proceed}>
+              {t('Proceed to payment \xB7')}{' '}
+              {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))} →
+            </button>
+            <p className="demo-note">
+              {t(
+                'Group trip fare. Your captain is included. Only your selected seats are reserved.',
+              )}
+            </p>
+          </>
+        )}
+        {stage === 'payment' && (
+          <PaymentForm
+            cancellationPolicy={paymentConfig?.cancellationPolicy}
+            paymentMode={paymentConfig?.mode}
+            boat={boat}
+            trip={trip}
+            currency={currency}
+            draft={draft}
+            onDraft={setDraft}
+            accountEmail={user?.email}
+            onPay={pay}
+            onBack={() => {
+              setError('');
+              setStage('review');
+            }}
+            error={error}
+          />
+        )}
+        {processing && (
+          <div className="processing" role="status">
+            <div className="spinner" />
+            <h2 id="flow-title" className="dialog-title">
+              {t('A moment, then the horizon.')}
+            </h2>
+            <p className="subtitle">
+              {t(
+                paymentConfig?.mode === 'razorpay'
+                  ? 'Waiting for payment confirmation…'
+                  : 'Simulating secure payment processing…',
+              )}
+            </p>
+          </div>
+        )}
+        {stage === 'passes' && (
+          <>
+            <p className="steps">{t('YOUR JOURNEYS')}</p>
+            <h2 id="flow-title" className="dialog-title">
+              {t('My boarding passes.')}
+            </h2>
+            <p className="subtitle">
+              {t('Your signed-in account bookings. Download passes for offline access.')}
+            </p>
+            <div className="pass-list">
+              {passes.length ? (
+                passes.map((pass) => (
+                  <button
+                    key={pass.id}
+                    className="saved-pass"
+                    onClick={() => {
+                      setActivePass(pass);
+                      setStage('pass');
+                    }}
+                  >
+                    <strong>
+                      {t(
+                        (pass.boat || N.boats.find((boat) => boat.id === pass.boatId))?.name ||
+                          pass.boatId,
+                      )}
+                    </strong>
+                    <small>
+                      {t(pass.date)} · {t(pass.slot)}
+                      <br />
+                      {pass.id} · {t(pass.guests)} {t('guests \xB7')}{' '}
+                      {t(N.money(pass.total, currency, locale))}
+                    </small>
+                  </button>
+                ))
+              ) : (
+                <div className="empty">
+                  <h3>{t('Your horizon is waiting.')}</h3>
+                  <p>{t('Your first boarding pass will appear here after booking.')}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        {(stage === 'confirmed' || stage === 'pass') && (
+          <BoardingPass
+            booking={activePass}
+            currency={currency}
+            confirmed={stage === 'confirmed'}
+            onExplore={close}
+          />
+        )}
+      </div>
+    </dialog>
+  );
 }

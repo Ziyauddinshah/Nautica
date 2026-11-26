@@ -214,3 +214,11 @@ Admin sign-in now requires authenticator MFA or a single-use recovery code. Conf
 Backup drills and launch pilot: [BACKUP_RESTORE_PILOT.md](BACKUP_RESTORE_PILOT.md)
 provides encrypted MongoDB backup/restore testing, `npm run pilot:simulate`, and a
 five-guest live acceptance run sheet.
+
+## Developer and third-party handover
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), the
+[developer guide](docs/DEVELOPER_GUIDE.md) and
+[file-by-file reference](docs/FILE_REFERENCE.md). Review
+[access, privacy and security](docs/ACCESS_PRIVACY_SECURITY.md) before granting
+third-party access; see [SECURITY.md](SECURITY.md) for private vulnerability reports.

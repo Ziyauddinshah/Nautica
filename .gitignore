@@ -15,3 +15,9 @@ data/
 
 .cache/
 *.bson
+# Private exports, TLS keys and recovery artifacts never belong in a checkout.
+*.nbk
+*.pem
+*.key
+*.p12
+*.pfx

@@ -1,18 +1,111 @@
-import {test} from 'vitest';
+/** @file Regression tests for booking behavior using isolated fixtures. */
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import * as N from '../src/domain/booking.js';
-import {qrSvg} from '../src/lib/qr.js';
-test('eight diverse boats across four destinations',()=>{assert.equal(N.boats.length,8);assert.equal(new Set(N.boats.map(b=>b.pier)).size,4);assert.equal(new Set(N.boats.map(b=>b.type)).size,4);});
-test('destination, type and capacity filters compose',()=>{assert.equal(N.available({pier:'Assi Ghat',type:N.types[0],guests:2}).length,2);assert.deepEqual(N.available({pier:'Assi Ghat',type:N.types[0],guests:20}).map(b=>b.id),['b2']);assert.equal(N.available({pier:'Lake Como',type:'Wooden boat',guests:2}).length,0);assert.equal(N.available({pier:'',type:N.types[0],guests:30}).length,1);});
-test('fee applies to fare plus extras without charging for safety',()=>{assert.deepEqual(N.amounts(N.boats[0],['safety']),{base:120000,addons:0,fee:6000,total:126000});assert.equal(N.amounts(N.boats[0],['safety','snacks']).total,168000);assert.equal(N.amounts({...N.boats[0],fare:110},[]).total,116);assert.equal(N.amounts(N.boats[0],['safety','snacks','photo','guide']).total,409500);});
-test('all prices use the same INR/USD rate',()=>{assert.equal(N.money(120000,'USD'),'$14.46');assert.equal(N.money(150000,'USD'),'$18.07');assert.match(N.money(120000,'INR'),/1,200\.00/);});
-test('UPI rejects missing and malformed handles',()=>{for(const id of ['alex@okaxis','alex.s@bank','aarav-1@upi'])assert.ok(N.upi(id));for(const id of ['', '@bank','alex','alex@@bank','a b@bank'])assert.ok(!N.upi(id));});
-test('card rejects bad Luhn, all-zero and non-digit PANs',()=>{assert.ok(N.card('4242424242424242'));assert.ok(N.card('378282246310005'));for(const n of ['','4242424242424241','0000000000000000','4242 4242 4242 4242'])assert.ok(!N.card(n));});
-test('expiry accepts current month and rejects expired dates',()=>{const now=new Date(2026,10,17);for(const e of ['11/26','12/26','01/27'])assert.ok(N.expiry(e,now));for(const e of ['10/26','01/20','13/29','00/27','1/27',''])assert.ok(!N.expiry(e,now));});
-test('network detection and CVV lengths',()=>{assert.equal(N.network('22210000'),'MASTERCARD');assert.equal(N.network('5555'),'MASTERCARD');assert.equal(N.network('60'),'RUPAY');assert.equal(N.network('37'),'AMEX');assert.ok(N.cvv('37','1234'));assert.ok(!N.cvv('37','123'));assert.ok(N.cvv('4242','123'));assert.ok(!N.cvv('4242','1234'));});
-test('local date follows calendar date rather than UTC conversion',()=>{assert.equal(N.localDate(new Date(2026,0,2,0,1)),'2026-01-02');});
-test('QR generator supports international metadata',()=>{assert.match(qrSvg(JSON.stringify({id:'NTC-ABCD1234',name:'आरव शर्मा · Élodie'})),/<svg/);});
-test('every vessel has exactly its capacity in unique numbered passenger seats',()=>{for(const boat of N.boats){const seats=N.seatLayout(boat);assert.equal(seats.length,boat.capacity);assert.equal(new Set(seats.map(s=>s.id)).size,boat.capacity);assert.equal(seats[0].id,'01');assert.equal(seats.at(-1).id,String(boat.capacity).padStart(2,'0'));assert.ok(seats.every(s=>s.side&&s.zone));}});
-test('layout represents front/rear and left/right with no captain in passenger count',()=>{const wood=N.seatLayout(N.boats[0]);assert.equal(wood[0].zone,'Front');assert.equal(wood[0].side,'Port (left)');assert.equal(wood[1].side,'Starboard (right)');assert.equal(wood.at(-1).zone,'Rear');const party=N.seatLayout(N.boats[3]);assert.deepEqual(party.slice(0,4).map(s=>s.column),[0,1,2,3]);assert.equal(party.at(-1).row,7);assert.equal(party.at(-1).side,'Starboard (right)');assert.equal(N.seatLayout(N.boats[7]).at(-1).side,'Center');});
-test('checkout requires exactly one valid, distinct seat per guest',()=>{const boat=N.boats[0];assert.ok(N.validSeats(boat,['01','06'],2));for(const [seats,guests] of [[[],2],[['01'],2],[['01','01'],2],[['01','99'],2],[['01','02','03'],2],[null,2],[['01'],0]])assert.equal(N.validSeats(boat,seats,guests),false);assert.equal(N.validSeats(boat,['01'],1.5),false);});
-test('legacy passes remain readable and seat summaries filter invalid data',()=>{const boat=N.boats[0];assert.equal(N.seatText(boat,undefined),'Not selected');assert.equal(N.seatText(boat,['06','02','02','99','<script>']),'02, 06');});
+import { qrSvg } from '../src/lib/qr.js';
+test('eight diverse boats across four destinations', () => {
+  assert.equal(N.boats.length, 8);
+  assert.equal(new Set(N.boats.map((b) => b.pier)).size, 4);
+  assert.equal(new Set(N.boats.map((b) => b.type)).size, 4);
+});
+test('destination, type and capacity filters compose', () => {
+  assert.equal(N.available({ pier: 'Assi Ghat', type: N.types[0], guests: 2 }).length, 2);
+  assert.deepEqual(
+    N.available({ pier: 'Assi Ghat', type: N.types[0], guests: 20 }).map((b) => b.id),
+    ['b2'],
+  );
+  assert.equal(N.available({ pier: 'Lake Como', type: 'Wooden boat', guests: 2 }).length, 0);
+  assert.equal(N.available({ pier: '', type: N.types[0], guests: 30 }).length, 1);
+});
+test('fee applies to fare plus extras without charging for safety', () => {
+  assert.deepEqual(N.amounts(N.boats[0], ['safety']), {
+    base: 120000,
+    addons: 0,
+    fee: 6000,
+    total: 126000,
+  });
+  assert.equal(N.amounts(N.boats[0], ['safety', 'snacks']).total, 168000);
+  assert.equal(N.amounts({ ...N.boats[0], fare: 110 }, []).total, 116);
+  assert.equal(N.amounts(N.boats[0], ['safety', 'snacks', 'photo', 'guide']).total, 409500);
+});
+test('all prices use the same INR/USD rate', () => {
+  assert.equal(N.money(120000, 'USD'), '$14.46');
+  assert.equal(N.money(150000, 'USD'), '$18.07');
+  assert.match(N.money(120000, 'INR'), /1,200\.00/);
+});
+test('UPI rejects missing and malformed handles', () => {
+  for (const id of ['alex@okaxis', 'alex.s@bank', 'aarav-1@upi']) assert.ok(N.upi(id));
+  for (const id of ['', '@bank', 'alex', 'alex@@bank', 'a b@bank']) assert.ok(!N.upi(id));
+});
+test('card rejects bad Luhn, all-zero and non-digit PANs', () => {
+  assert.ok(N.card('4242424242424242'));
+  assert.ok(N.card('378282246310005'));
+  for (const n of ['', '4242424242424241', '0000000000000000', '4242 4242 4242 4242'])
+    assert.ok(!N.card(n));
+});
+test('expiry accepts current month and rejects expired dates', () => {
+  const now = new Date(2026, 10, 17);
+  for (const e of ['11/26', '12/26', '01/27']) assert.ok(N.expiry(e, now));
+  for (const e of ['10/26', '01/20', '13/29', '00/27', '1/27', '']) assert.ok(!N.expiry(e, now));
+});
+test('network detection and CVV lengths', () => {
+  assert.equal(N.network('22210000'), 'MASTERCARD');
+  assert.equal(N.network('5555'), 'MASTERCARD');
+  assert.equal(N.network('60'), 'RUPAY');
+  assert.equal(N.network('37'), 'AMEX');
+  assert.ok(N.cvv('37', '1234'));
+  assert.ok(!N.cvv('37', '123'));
+  assert.ok(N.cvv('4242', '123'));
+  assert.ok(!N.cvv('4242', '1234'));
+});
+test('local date follows calendar date rather than UTC conversion', () => {
+  assert.equal(N.localDate(new Date(2026, 0, 2, 0, 1)), '2026-01-02');
+});
+test('QR generator supports international metadata', () => {
+  assert.match(qrSvg(JSON.stringify({ id: 'NTC-ABCD1234', name: 'आरव शर्मा · Élodie' })), /<svg/);
+});
+test('every vessel has exactly its capacity in unique numbered passenger seats', () => {
+  for (const boat of N.boats) {
+    const seats = N.seatLayout(boat);
+    assert.equal(seats.length, boat.capacity);
+    assert.equal(new Set(seats.map((s) => s.id)).size, boat.capacity);
+    assert.equal(seats[0].id, '01');
+    assert.equal(seats.at(-1).id, String(boat.capacity).padStart(2, '0'));
+    assert.ok(seats.every((s) => s.side && s.zone));
+  }
+});
+test('layout represents front/rear and left/right with no captain in passenger count', () => {
+  const wood = N.seatLayout(N.boats[0]);
+  assert.equal(wood[0].zone, 'Front');
+  assert.equal(wood[0].side, 'Port (left)');
+  assert.equal(wood[1].side, 'Starboard (right)');
+  assert.equal(wood.at(-1).zone, 'Rear');
+  const party = N.seatLayout(N.boats[3]);
+  assert.deepEqual(
+    party.slice(0, 4).map((s) => s.column),
+    [0, 1, 2, 3],
+  );
+  assert.equal(party.at(-1).row, 7);
+  assert.equal(party.at(-1).side, 'Starboard (right)');
+  assert.equal(N.seatLayout(N.boats[7]).at(-1).side, 'Center');
+});
+test('checkout requires exactly one valid, distinct seat per guest', () => {
+  const boat = N.boats[0];
+  assert.ok(N.validSeats(boat, ['01', '06'], 2));
+  for (const [seats, guests] of [
+    [[], 2],
+    [['01'], 2],
+    [['01', '01'], 2],
+    [['01', '99'], 2],
+    [['01', '02', '03'], 2],
+    [null, 2],
+    [['01'], 0],
+  ])
+    assert.equal(N.validSeats(boat, seats, guests), false);
+  assert.equal(N.validSeats(boat, ['01'], 1.5), false);
+});
+test('legacy passes remain readable and seat summaries filter invalid data', () => {
+  const boat = N.boats[0];
+  assert.equal(N.seatText(boat, undefined), 'Not selected');
+  assert.equal(N.seatText(boat, ['06', '02', '02', '99', '<script>']), '02, 06');
+});

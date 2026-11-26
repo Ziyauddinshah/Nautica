@@ -22,8 +22,8 @@ services:
       NAUTICA_PROXY_TOKEN: ${NAUTICA_PROXY_TOKEN:?Set the shared proxy token}
       NAUTICA_DOMAIN: ${NAUTICA_DOMAIN:?Set NAUTICA_DOMAIN to your real hostname}
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

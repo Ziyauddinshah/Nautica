@@ -1,41 +1,143 @@
-import {digest} from './errors.js';
-import {Operations} from './operations/repository.js';
-import {operationsWebhook} from './operations/webhook.js';
-import {independentAlerts,operationsWorker} from './operations/worker.js';
-import {instanceId} from './operations/repository.js';
-import {Refunds} from './aftercare/refunds.js';
-import {aftercareWorker} from './aftercare/worker.js';
-import {OwnerVerification} from './verification/repository.js';
-import {identityProvider} from './verification/provider.js';
-import {createTextbeeGateway} from './services/textbee.js';
-import {createSmsService} from './services/sms.js';
-import {MongoSmsStore} from './repositories/mongo-sms.js';
-import {openRepository} from './runtime.js';
-import {createSharedEmailService} from './services/email.js';
+/** @file Server composition root: configures storage, providers, workers and graceful shutdown. */
+import { digest } from './errors.js';
+import { Operations } from './operations/repository.js';
+import { operationsWebhook } from './operations/webhook.js';
+import { independentAlerts, operationsWorker } from './operations/worker.js';
+import { instanceId } from './operations/repository.js';
+import { Refunds } from './aftercare/refunds.js';
+import { aftercareWorker } from './aftercare/worker.js';
+import { OwnerVerification } from './verification/repository.js';
+import { identityProvider } from './verification/provider.js';
+import { createTextbeeGateway } from './services/textbee.js';
+import { createSmsService } from './services/sms.js';
+import { MongoSmsStore } from './repositories/mongo-sms.js';
+import { openRepository } from './runtime.js';
+import { createSharedEmailService } from './services/email.js';
 import { createApp } from './app.js';
-import {productionConfig} from './config.js';
-import {MongoOutboxStore} from './repositories/mongo-outbox.js';
-import {MongoPaymentStore} from './repositories/mongo-payments.js';
-import {createPaymentService} from './services/payments.js';
-import {createRazorpayGateway} from './services/razorpay.js';
-const config=productionConfig();
-const opsWebhook=operationsWebhook(),independent=independentAlerts({webhook:opsWebhook});
-let repository;try{repository=await openRepository();}catch{const incidentId='database:startup:'+instanceId();await independent.send({incidentId,code:'database',severity:'critical',state:'open',at:new Date().toISOString()},digest(process.env.OPS_APPLICATION_ID||'nautica')+':'+incidentId+':'+Math.floor(Date.now()/900000));independent.close();throw new Error('Shared database startup failed. Check private server configuration.');}
-repository.ops=new Operations(repository,{webhook:opsWebhook});
-const mode=process.env.NAUTICA_BOOKING_MODE||'seats';
-if(!['seats','private'].includes(mode))throw new Error('NAUTICA_BOOKING_MODE must be seats or private.');
-const port=Number(process.env.PORT||3001),host=process.env.HOST||'127.0.0.1';
-const smsGateway=createTextbeeGateway({onHealth:ok=>repository.ops.service('textbee',ok)});
-repository.verification=new OwnerVerification(repository,{sms:smsGateway,provider:identityProvider(process.env,fetch,ok=>repository.ops.service('identity',ok))});
-repository.smsEnabled=smsGateway.enabled;repository.smsAdminEnabled=Boolean(smsGateway.config.adminTo);
-const smsService=createSmsService(new MongoSmsStore(repository),smsGateway);
-const emailService=createSharedEmailService(new MongoOutboxStore(repository),{onHealth:ok=>repository.ops.service('smtp',ok)});
-const gateway=createRazorpayGateway({keyId:process.env.RAZORPAY_KEY_ID,keySecret:process.env.RAZORPAY_KEY_SECRET,webhookSecret:process.env.RAZORPAY_WEBHOOK_SECRET,onHealth:ok=>repository.ops.service('razorpay',ok)});
-const refunds=new Refunds(repository,gateway);
-const aftercare=aftercareWorker({refunds,reminders:repository.reminders,emailService,smsService,remindersEnabled:process.env.DOCUMENT_REMINDERS_ENABLED!=='false'});
-const payments=createPaymentService(new MongoPaymentStore(repository),gateway,{mode,refunds});
-const monitor=operationsWorker({repo:repository,sender:independent,emailService,smsService});
-const scan=repository.fleet.scan;repository.fleet.scan=async bytes=>{try{const result=await scan(bytes);repository.ops.service('documents',true).catch(()=>{});return result;}catch(error){repository.ops.service('documents',error.status===400).catch(()=>{});throw error;}};
-const server=createApp(null,{repository,mode,proxyToken:process.env.NAUTICA_PROXY_TOKEN||'',emailService,smsService,...config,payments,refunds,aftercare,trustedProxyIPs:(process.env.TRUSTED_PROXY_IPS||'').split(',').map(value=>value.trim()).filter(Boolean)});
-server.listen(port,host,()=>{console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);console.log(emailService.status().reason);console.log('Shared MongoDB storage; this replica has no local database fallback.');if(smsGateway.enabled)console.log('Booking SMS enabled; admin SMS '+(repository.smsAdminEnabled?'enabled.':'disabled until SMS_ADMIN_TO is configured.'));else if(smsGateway.config.enabled)console.log('Booking SMS configuration is incomplete. Set TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID privately.');emailService.start();smsService.start();aftercare.start();monitor.start();});
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await monitor.stop();await aftercare.stop();await Promise.all([emailService.stop(),smsService.stop()]);await repository.close();process.exit(0);}));
+import { productionConfig } from './config.js';
+import { MongoOutboxStore } from './repositories/mongo-outbox.js';
+import { MongoPaymentStore } from './repositories/mongo-payments.js';
+import { createPaymentService } from './services/payments.js';
+import { createRazorpayGateway } from './services/razorpay.js';
+const config = productionConfig();
+const opsWebhook = operationsWebhook(),
+  independent = independentAlerts({ webhook: opsWebhook });
+let repository;
+try {
+  repository = await openRepository();
+} catch {
+  const incidentId = 'database:startup:' + instanceId();
+  await independent.send(
+    {
+      incidentId,
+      code: 'database',
+      severity: 'critical',
+      state: 'open',
+      at: new Date().toISOString(),
+    },
+    digest(process.env.OPS_APPLICATION_ID || 'nautica') +
+      ':' +
+      incidentId +
+      ':' +
+      Math.floor(Date.now() / 900000),
+  );
+  independent.close();
+  throw new Error('Shared database startup failed. Check private server configuration.');
+}
+repository.ops = new Operations(repository, { webhook: opsWebhook });
+const mode = process.env.NAUTICA_BOOKING_MODE || 'seats';
+if (!['seats', 'private'].includes(mode))
+  throw new Error('NAUTICA_BOOKING_MODE must be seats or private.');
+const port = Number(process.env.PORT || 3001),
+  host = process.env.HOST || '127.0.0.1';
+const smsGateway = createTextbeeGateway({
+  onHealth: (ok) => repository.ops.service('textbee', ok),
+});
+repository.verification = new OwnerVerification(repository, {
+  sms: smsGateway,
+  provider: identityProvider(process.env, fetch, (ok) => repository.ops.service('identity', ok)),
+});
+repository.smsEnabled = smsGateway.enabled;
+repository.smsAdminEnabled = Boolean(smsGateway.config.adminTo);
+const smsService = createSmsService(new MongoSmsStore(repository), smsGateway);
+const emailService = createSharedEmailService(new MongoOutboxStore(repository), {
+  onHealth: (ok) => repository.ops.service('smtp', ok),
+});
+const gateway = createRazorpayGateway({
+  keyId: process.env.RAZORPAY_KEY_ID,
+  keySecret: process.env.RAZORPAY_KEY_SECRET,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+  onHealth: (ok) => repository.ops.service('razorpay', ok),
+});
+const refunds = new Refunds(repository, gateway);
+const aftercare = aftercareWorker({
+  refunds,
+  reminders: repository.reminders,
+  emailService,
+  smsService,
+  remindersEnabled: process.env.DOCUMENT_REMINDERS_ENABLED !== 'false',
+});
+const payments = createPaymentService(new MongoPaymentStore(repository), gateway, {
+  mode,
+  refunds,
+});
+const monitor = operationsWorker({
+  repo: repository,
+  sender: independent,
+  emailService,
+  smsService,
+});
+const scan = repository.fleet.scan;
+repository.fleet.scan = async (bytes) => {
+  try {
+    const result = await scan(bytes);
+    repository.ops.service('documents', true).catch(() => {});
+    return result;
+  } catch (error) {
+    repository.ops.service('documents', error.status === 400).catch(() => {});
+    throw error;
+  }
+};
+const server = createApp(null, {
+  repository,
+  mode,
+  proxyToken: process.env.NAUTICA_PROXY_TOKEN || '',
+  emailService,
+  smsService,
+  ...config,
+  payments,
+  refunds,
+  aftercare,
+  trustedProxyIPs: (process.env.TRUSTED_PROXY_IPS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+});
+server.listen(port, host, () => {
+  console.log(`Nautica server: http://${host}:${port} (${mode} bookings)`);
+  console.log(emailService.status().reason);
+  console.log('Shared MongoDB storage; this replica has no local database fallback.');
+  if (smsGateway.enabled)
+    console.log(
+      'Booking SMS enabled; admin SMS ' +
+        (repository.smsAdminEnabled ? 'enabled.' : 'disabled until SMS_ADMIN_TO is configured.'),
+    );
+  else if (smsGateway.config.enabled)
+    console.log(
+      'Booking SMS configuration is incomplete. Set TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID privately.',
+    );
+  emailService.start();
+  smsService.start();
+  aftercare.start();
+  monitor.start();
+});
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.on(signal, () =>
+    server.close(async () => {
+      await monitor.stop();
+      await aftercare.stop();
+      await Promise.all([emailService.stop(), smsService.stop()]);
+      await repository.close();
+      process.exit(0);
+    }),
+  );

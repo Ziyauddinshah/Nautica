@@ -35,7 +35,12 @@
     "db:backup": "node --env-file-if-exists=.env scripts/mongo-backup.js",
     "db:restore:test": "node --env-file-if-exists=.env scripts/mongo-restore-test.js",
     "test:recovery": "node --test integration/recovery.test.js",
-    "pilot:simulate": "node scripts/pilot-simulate.js"
+    "pilot:simulate": "node scripts/pilot-simulate.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "security:check": "node scripts/check-boundaries.js",
+    "docs:generate": "node scripts/file-reference.js",
+    "docs:check": "node scripts/file-reference.js --check"
   },
   "dependencies": {
     "@fontsource/noto-sans-devanagari": "^5.3.0",
@@ -51,6 +56,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "jsdom": "^27.2.0",
     "mongodb-memory-server-core": "^11.3.0",
+    "prettier": "3.6.2",
     "smtp-server": "^3.21.6",
     "vite": "^7.2.2",
     "vitest": "^4.0.8"

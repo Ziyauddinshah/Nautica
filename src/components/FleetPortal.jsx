@@ -1,3 +1,4 @@
+/** @file React fleet portal view; authorization and authoritative state remain on the server. */
 import AdminSignIn from './AdminSignIn.jsx';
 import DocumentRenewals from './DocumentRenewals.jsx';
 import DocumentReminders from './DocumentReminders.jsx';
@@ -22,22 +23,17 @@ const blank = {
   lifeJackets: 7,
   fare: 100000,
   captainIncluded: true,
-  amenities: []
+  amenities: [],
 };
-const readFile = file => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onerror = () => reject(new Error('Unable to read file.'));
-  reader.onload = () => resolve(String(reader.result).split(',')[1]);
-  reader.readAsDataURL(file);
-});
-export default function FleetPortal({
-  admin = false,
-  user,
-  onUser
-}) {
-  const {
-      t
-    } = useI18n(),
+const readFile = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Unable to read file.'));
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.readAsDataURL(file);
+  });
+export default function FleetPortal({ admin = false, user, onUser }) {
+  const { t } = useI18n(),
     [ownerVerified, setOwnerVerified] = useState(false),
     [ownerEmail, setOwnerEmail] = useState(''),
     [ownerAuthority, setOwnerAuthority] = useState(false),
@@ -45,41 +41,44 @@ export default function FleetPortal({
     [adminName, setAdminName] = useState(''),
     [login, setLogin] = useState({
       username: '',
-      password: ''
+      password: '',
     }),
     [boats, setBoats] = useState([]),
     [page, setPage] = useState({
       offset: 0,
-      total: 0
+      total: 0,
     }),
     [offset, setOffset] = useState(0),
     [boat, setBoat] = useState(null),
     [details, setDetails] = useState({
-      ...blank
+      ...blank,
     }),
     [creating, setCreating] = useState(false),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [notes, setNotes] = useState(''),
     [checks, setChecks] = useState({}),
-    [renewalDeclaration,setRenewalDeclaration]=useState(false),
+    [renewalDeclaration, setRenewalDeclaration] = useState(false),
     [declaration, setDeclaration] = useState(false),
     [upload, setUpload] = useState({
       category: 'registration',
       number: '',
       issuer: '',
       issuedOn: '',
-      expiresOn: ''
+      expiresOn: '',
     }),
     [file, setFile] = useState(null),
     [refresh, setRefresh] = useState(0);
   const base = admin ? '/api/admin/fleet' : '/api/owner/boats',
     ready = admin ? authenticated : Boolean(user);
   useEffect(() => {
-    if (admin) request('/api/admin/session').then(result => {
-      setAdminName(result.username);
-      setAuthenticated(true);
-    }).catch(() => setAuthenticated(false));
+    if (admin)
+      request('/api/admin/session')
+        .then((result) => {
+          setAdminName(result.username);
+          setAuthenticated(true);
+        })
+        .catch(() => setAuthenticated(false));
   }, [admin]);
   useEffect(() => {
     setBoat(null);
@@ -88,16 +87,18 @@ export default function FleetPortal({
     if (!ready) return;
     const controller = new AbortController();
     request(base + '?offset=' + offset, {
-      signal: controller.signal
-    }).then(data => {
-      setBoats(data.boats);
-      setPage({
-        offset: data.offset || 0,
-        total: data.total || data.boats.length
+      signal: controller.signal,
+    })
+      .then((data) => {
+        setBoats(data.boats);
+        setPage({
+          offset: data.offset || 0,
+          total: data.total || data.boats.length,
+        });
+      })
+      .catch((e) => {
+        if (e.name !== 'AbortError') setError(e.message);
       });
-    }).catch(e => {
-      if (e.name !== 'AbortError') setError(e.message);
-    });
     return () => controller.abort();
   }, [ready, user?.id, refresh, base, offset]);
   async function run(work) {
@@ -128,181 +129,687 @@ export default function FleetPortal({
   async function mutate(action, body) {
     const result = await request(base + '/' + boat.id + (action ? '/' + action : ''), {
       method: 'POST',
-      ...(action === 'documents' ? {
-        signal: AbortSignal.timeout(60000)
-      } : {}),
+      ...(action === 'documents'
+        ? {
+            signal: AbortSignal.timeout(60000),
+          }
+        : {}),
       body: {
         ...body,
-        revision: boat.revision
-      }
+        revision: boat.revision,
+      },
     });
     setBoat(result.boat);
     setDetails(result.boat.details);
-    setBoats(previous => previous.map(item => item.id === result.boat.id ? result.boat : item));
+    setBoats((previous) =>
+      previous.map((item) => (item.id === result.boat.id ? result.boat : item)),
+    );
     setNotes('');
     setChecks({});
     setDeclaration(false);
   }
-  const field = (key, label, props = {}) => <label key={key}>{t(label)}<input required value={details[key]} onChange={event => setDetails({
-      ...details,
-      [key]: props.type === 'number' ? Number(event.target.value) : event.target.value
-    })} {...props} /></label>;
-  const canEdit = !admin || boat?.createdBy === 'admin:' + adminName;
-  const editable = canEdit && boat && ['draft', 'rejected', 'approved', 'suspended'].includes(boat.status);
-  return <><header className="header"><a className="brand" href="/">⚓ Nautica.</a><LanguageSwitcher /><nav><a href={admin ? '/admin' : '/account'}>{t(admin ? 'Booking administration' : 'My account')}</a><a href="/">{t('Explore boats')}</a></nav></header><main className="fleet-portal"><h1>{t(admin ? 'Fleet review' : 'Register a boat')}</h1><p>{t('India / Varanasi. Only approved vessels with valid documents can accept new bookings.')}</p><p>{t('This platform checklist requires authority verification. Uploading documents does not grant legal permission to operate.')}</p>{error && <p role="alert">{t(error)}</p>}
- {!ready ? admin ? <AdminSignIn onSuccess={result=>{setAdminName(result.username);setAuthenticated(true);}}/> : user === undefined ? <p role="status">{t('Loading…')}</p> : <AuthForm onSuccess={onUser} message={t('Sign in to register and manage your boats.')} /> : <>
- {!admin && <OwnerVerification key={user.id} user={user} onStatus={setOwnerVerified} />}
- <button disabled={busy} onClick={() => setRefresh(v => v + 1)}>{t('Refresh')}</button> <button disabled={busy || !admin && !ownerVerified} className="primary" onClick={() => {
-          setCreating(true);
-          setBoat(null);
+  const field = (key, label, props = {}) => (
+    <label key={key}>
+      {t(label)}
+      <input
+        required
+        value={details[key]}
+        onChange={(event) =>
           setDetails({
-            ...blank
-          });
-        }}>{t('Add boat')}</button>
- <div><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{t('Previous')}</button> {Math.min(page.total, offset + 1)}–{Math.min(page.total, offset + boats.length)} / {page.total}<button disabled={busy || offset + boats.length >= page.total} onClick={() => setOffset(offset + 50)}>{t('Next')}</button></div>
- <div className="fleet-workspace"><aside aria-label={t('Registered boats')}>{boats.length === 0 ? <p>{t('No registered boats yet.')}</p> : boats.map(item => <button key={item.id} disabled={busy} onClick={() => select(item)}><strong>{item.details.name}</strong><span>{t(item.status)}</span><small>{item.details.registrationNumber}</small></button>)}</aside><section>
- {(creating || boat) && <><h2>{creating ? t('New boat') : boat.details.name}</h2>{boat && <p>{t('Status')}: <strong>{t(boat.status)}</strong> · {t('Revision')}: {boat.revision}</p>}
- {(creating || editable) && <form className="fleet-details" onSubmit={e => {
-                e.preventDefault();
-                run(async () => {
-                  if (creating) {
-                    const result = await request(base, {
-                      method: 'POST',
-                      body: {
-                        ...details,
-                        ...(admin ? {
-                          ownerEmail
-                        } : {})
-                      }
-                    });
-                    setBoat(result.boat);
-                    setBoats(previous => [result.boat, ...previous]);
-                    setCreating(false);
-                  } else await mutate('', {
-                    details
-                  });
+            ...details,
+            [key]: props.type === 'number' ? Number(event.target.value) : event.target.value,
+          })
+        }
+        {...props}
+      />
+    </label>
+  );
+  const canEdit = !admin || boat?.createdBy === 'admin:' + adminName;
+  const editable =
+    canEdit && boat && ['draft', 'rejected', 'approved', 'suspended'].includes(boat.status);
+  return (
+    <>
+      <header className="header">
+        <a className="brand" href="/">
+          ⚓ Nautica.
+        </a>
+        <LanguageSwitcher />
+        <nav>
+          <a href={admin ? '/admin' : '/account'}>
+            {t(admin ? 'Booking administration' : 'My account')}
+          </a>
+          <a href="/">{t('Explore boats')}</a>
+        </nav>
+      </header>
+      <main className="fleet-portal">
+        <h1>{t(admin ? 'Fleet review' : 'Register a boat')}</h1>
+        <p>
+          {t(
+            'India / Varanasi. Only approved vessels with valid documents can accept new bookings.',
+          )}
+        </p>
+        <p>
+          {t(
+            'This platform checklist requires authority verification. Uploading documents does not grant legal permission to operate.',
+          )}
+        </p>
+        {error && <p role="alert">{t(error)}</p>}
+        {!ready ? (
+          admin ? (
+            <AdminSignIn
+              onSuccess={(result) => {
+                setAdminName(result.username);
+                setAuthenticated(true);
+              }}
+            />
+          ) : user === undefined ? (
+            <p role="status">{t('Loading…')}</p>
+          ) : (
+            <AuthForm
+              onSuccess={onUser}
+              message={t('Sign in to register and manage your boats.')}
+            />
+          )
+        ) : (
+          <>
+            {!admin && <OwnerVerification key={user.id} user={user} onStatus={setOwnerVerified} />}
+            <button disabled={busy} onClick={() => setRefresh((v) => v + 1)}>
+              {t('Refresh')}
+            </button>{' '}
+            <button
+              disabled={busy || (!admin && !ownerVerified)}
+              className="primary"
+              onClick={() => {
+                setCreating(true);
+                setBoat(null);
+                setDetails({
+                  ...blank,
                 });
-              }}>
- {admin && creating && <label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label>}
- {field('name', 'Boat name', {
-                  maxLength: 80
-                })}{field('operatorName', 'Owner / operator legal name', {
-                  maxLength: 120
-                })}{field('registrationNumber', 'Registration number', {
-                  maxLength: 60,
-                  disabled: !creating
-                })}{field('registrationAuthority', 'Registration authority', {
-                  maxLength: 160
-                })}
- <label>{t('Boat type')}<select value={details.type} onChange={e => setDetails({
-                    ...details,
-                    type: e.target.value
-                  })}>{types.slice(1).map(value => <option key={value} value={value}>{t(value)}</option>)}</select></label><label>{t('Propulsion')}<select value={details.propulsion} onChange={e => setDetails({
-                    ...details,
-                    propulsion: e.target.value
-                  })}>{['manual', 'motor', 'electric'].map(value => <option key={value} value={value}>{t(value)}</option>)}</select></label>
- <label>{t('Boarding pier')}<select value={details.pier} onChange={e => setDetails({
-                    ...details,
-                    pier: e.target.value
-                  })}>{['Assi Ghat', 'Dashashwamedh Ghat'].map(value => <option key={value} value={value}>{t(value)}</option>)}</select></label>
- {field('capacity', 'Certified passenger capacity', {
-                  type: 'number',
-                  min: 1,
-                  max: 60
-                })}{field('lifeJackets', 'Life jackets including captain', {
-                  type: 'number',
-                  min: 2,
-                  max: 200
-                })}
- <label>{t('Fare per group trip (INR)')}<input required type="number" min="1" max="1000000" step="0.01" value={details.fare / 100} onChange={e => setDetails({
-                    ...details,
-                    fare: Math.round(Number(e.target.value) * 100)
-                  })} /></label>
- {['description', 'boardingInstructions'].map(key => <label key={key}>{t(key === 'description' ? 'Public description' : 'Boarding instructions')}<textarea required minLength={key === 'description' ? 20 : 10} maxLength={key === 'description' ? 1500 : 600} value={details[key]} onChange={e => setDetails({
-                    ...details,
-                    [key]: e.target.value
-                  })} /></label>)}
+              }}
+            >
+              {t('Add boat')}
+            </button>
+            <div>
+              <button
+                disabled={busy || offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - 50))}
+              >
+                {t('Previous')}
+              </button>{' '}
+              {Math.min(page.total, offset + 1)}–{Math.min(page.total, offset + boats.length)} /{' '}
+              {page.total}
+              <button
+                disabled={busy || offset + boats.length >= page.total}
+                onClick={() => setOffset(offset + 50)}
+              >
+                {t('Next')}
+              </button>
+            </div>
+            <div className="fleet-workspace">
+              <aside aria-label={t('Registered boats')}>
+                {boats.length === 0 ? (
+                  <p>{t('No registered boats yet.')}</p>
+                ) : (
+                  boats.map((item) => (
+                    <button key={item.id} disabled={busy} onClick={() => select(item)}>
+                      <strong>{item.details.name}</strong>
+                      <span>{t(item.status)}</span>
+                      <small>{item.details.registrationNumber}</small>
+                    </button>
+                  ))
+                )}
+              </aside>
+              <section>
+                {(creating || boat) && (
+                  <>
+                    <h2>{creating ? t('New boat') : boat.details.name}</h2>
+                    {boat && (
+                      <p>
+                        {t('Status')}: <strong>{t(boat.status)}</strong> · {t('Revision')}:{' '}
+                        {boat.revision}
+                      </p>
+                    )}
+                    {(creating || editable) && (
+                      <form
+                        className="fleet-details"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          run(async () => {
+                            if (creating) {
+                              const result = await request(base, {
+                                method: 'POST',
+                                body: {
+                                  ...details,
+                                  ...(admin
+                                    ? {
+                                        ownerEmail,
+                                      }
+                                    : {}),
+                                },
+                              });
+                              setBoat(result.boat);
+                              setBoats((previous) => [result.boat, ...previous]);
+                              setCreating(false);
+                            } else
+                              await mutate('', {
+                                details,
+                              });
+                          });
+                        }}
+                      >
+                        {admin && creating && (
+                          <label>
+                            {t('Verified owner account email')}
+                            <input
+                              required
+                              type="email"
+                              value={ownerEmail}
+                              onChange={(e) => setOwnerEmail(e.target.value)}
+                            />
+                          </label>
+                        )}
+                        {field('name', 'Boat name', {
+                          maxLength: 80,
+                        })}
+                        {field('operatorName', 'Owner / operator legal name', {
+                          maxLength: 120,
+                        })}
+                        {field('registrationNumber', 'Registration number', {
+                          maxLength: 60,
+                          disabled: !creating,
+                        })}
+                        {field('registrationAuthority', 'Registration authority', {
+                          maxLength: 160,
+                        })}
+                        <label>
+                          {t('Boat type')}
+                          <select
+                            value={details.type}
+                            onChange={(e) =>
+                              setDetails({
+                                ...details,
+                                type: e.target.value,
+                              })
+                            }
+                          >
+                            {types.slice(1).map((value) => (
+                              <option key={value} value={value}>
+                                {t(value)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          {t('Propulsion')}
+                          <select
+                            value={details.propulsion}
+                            onChange={(e) =>
+                              setDetails({
+                                ...details,
+                                propulsion: e.target.value,
+                              })
+                            }
+                          >
+                            {['manual', 'motor', 'electric'].map((value) => (
+                              <option key={value} value={value}>
+                                {t(value)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          {t('Boarding pier')}
+                          <select
+                            value={details.pier}
+                            onChange={(e) =>
+                              setDetails({
+                                ...details,
+                                pier: e.target.value,
+                              })
+                            }
+                          >
+                            {['Assi Ghat', 'Dashashwamedh Ghat'].map((value) => (
+                              <option key={value} value={value}>
+                                {t(value)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {field('capacity', 'Certified passenger capacity', {
+                          type: 'number',
+                          min: 1,
+                          max: 60,
+                        })}
+                        {field('lifeJackets', 'Life jackets including captain', {
+                          type: 'number',
+                          min: 2,
+                          max: 200,
+                        })}
+                        <label>
+                          {t('Fare per group trip (INR)')}
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            max="1000000"
+                            step="0.01"
+                            value={details.fare / 100}
+                            onChange={(e) =>
+                              setDetails({
+                                ...details,
+                                fare: Math.round(Number(e.target.value) * 100),
+                              })
+                            }
+                          />
+                        </label>
+                        {['description', 'boardingInstructions'].map((key) => (
+                          <label key={key}>
+                            {t(
+                              key === 'description'
+                                ? 'Public description'
+                                : 'Boarding instructions',
+                            )}
+                            <textarea
+                              required
+                              minLength={key === 'description' ? 20 : 10}
+                              maxLength={key === 'description' ? 1500 : 600}
+                              value={details[key]}
+                              onChange={(e) =>
+                                setDetails({
+                                  ...details,
+                                  [key]: e.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
 
- <p>{t('A qualified captain is required. The numbered seat plan must match the actual boat and certified passenger capacity.')}</p><button className="primary" disabled={busy || !admin && !ownerVerified}>{t(creating ? 'Create draft' : 'Save details as draft')}</button></form>}
- {boat && !editable && <dl>{Object.entries(boat.details).filter(([key]) => !['tone', 'amenities'].includes(key)).map(([key, value]) => <div key={key}><dt>{t({
-                      name: 'Boat name',
-                      operatorName: 'Owner / operator legal name',
-                      registrationNumber: 'Registration number',
-                      registrationAuthority: 'Registration authority',
-                      description: 'Public description',
-                      boardingInstructions: 'Boarding instructions',
-                      type: 'Boat type',
-                      propulsion: 'Propulsion',
-                      pier: 'Boarding pier',
-                      capacity: 'Certified passenger capacity',
-                      lifeJackets: 'Life jackets including captain',
-                      fare: 'Fare (paise)',
-                      timeZone: 'Local time zone',
-                      jurisdiction: 'Jurisdiction',
-                      captainIncluded: 'Captain included'
-                    }[key] || key)}</dt><dd>{typeof value === 'boolean' ? t(value ? 'Yes' : 'No') : t(String(value))}</dd></div>)}</dl>}
- {boat && <>{admin && !boat.ownerId && <form onSubmit={e => {
-                  e.preventDefault();
-                  run(() => mutate('owner', {
-                    ownerEmail,
-                    notes,
-                    declaration: ownerAuthority
-                  }));
-                }}><h3>{t('Link verified owner')}</h3><p>{t('Linking an owner pauses new bookings and requires a fresh admin review. Existing tickets remain unchanged.')}</p><label>{t('Verified owner account email')}<input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} /></label><label>{t('Review notes')}<textarea required minLength={10} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} /></label><label className="fleet-check"><input type="checkbox" required checked={ownerAuthority} onChange={e => setOwnerAuthority(e.target.checked)} />{t('I verified this account is authorized to operate the boat.')}</label><button disabled={busy || !ownerAuthority}>{t('Link verified owner')}</button></form>}<h3>{t('Numbered passenger seats')}</h3><div className="fleet-seat-preview">{seatLayout(boat.details).map(seat => <span key={seat.id}>{seat.id}</span>)}</div><DocumentRenewals key={boat.id+boat.revision} boat={boat} admin={admin} onChanged={()=>select(boat)}/><DocumentReminders key={boat.id} boatId={boat.id} revision={boat.revision} admin={admin}/><h3>{t('Private documents')}</h3><p>{t('PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.')}</p><ul>{boatDocumentTypes.map(type => {
-                    const document = boat.documents[type.id];
-                    return <li key={type.id}>{t(type.label)}: {document ? <><a href={`${base}/${boat.id}/documents/${document.id}`}>{t('Download')}</a> · {document.number} · {document.expiresOn || t('No expiry recorded')}</> : t('Missing')}</li>;
-                  })}</ul>
- {editable && <form className="fleet-details" onSubmit={e => {
-                  e.preventDefault();
-                  run(async () => {
-                    if (!file || file.size > 5 * 1024 * 1024) throw new Error('Choose a supported file up to 5 MB.');
-                    await mutate('documents', {
-                      ...upload,declaration:renewalDeclaration,
-                      mime: file.type,
-                      data: await readFile(file)
-                    });
-                    setFile(null);setRenewalDeclaration(false);
-                  });
-                }}>
- <label>{t('Document category')}<select value={upload.category} onChange={e => setUpload({
-                      ...upload,
-                      category: e.target.value
-                    })}>{boatDocumentTypes.map(type => <option key={type.id} value={type.id}>{t(type.label)}</option>)}</select></label>
- {['number', 'issuer', 'issuedOn', 'expiresOn'].map(key => <label key={key}>{t({
-                      number: 'Document number',
-                      issuer: 'Issuing authority',
-                      issuedOn: 'Issue date',
-                      expiresOn: 'Expiry date'
-                    }[key])}<input required={key !== 'expiresOn' || boatDocumentTypes.find(type => type.id === upload.category).expiring} type={key.endsWith('On') ? 'date' : 'text'} value={upload[key]} onChange={e => setUpload({
-                      ...upload,
-                      [key]: e.target.value
-                    })} /></label>)}<label>{t('Document file')}<input key={boat.revision} required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => setFile(e.target.files[0])} /></label>{boat.status==='approved'&&<label className="fleet-check"><input type="checkbox" checked={renewalDeclaration} onChange={event=>setRenewalDeclaration(event.target.checked)}/>{t('I confirm this renewal is authentic and applies to the same boat.')}</label>}<button disabled={busy || !file||(boat.status==='approved'&&!renewalDeclaration)}>{t('Upload document')}</button></form>}
- {canEdit && ['draft', 'rejected'].includes(boat.status) && <form onSubmit={e => {
-                  e.preventDefault();
-                  run(() => mutate('submit', {
-                    declaration
-                  }));
-                }}><label className="fleet-check"><input type="checkbox" required checked={declaration} onChange={e => setDeclaration(e.target.checked)} />{t('I am authorized to operate this boat. Details and documents are authentic, current and match the actual boat.')}</label><button className="primary" disabled={busy || !declaration || !admin && !ownerVerified}>{t('Submit for admin review')}</button></form>}
- {boat.status === 'pending' && <button disabled={busy} onClick={() => run(() => mutate('withdraw', {}))}>{t('Withdraw submission')}</button>}
- {admin && boat.status === 'pending' && boat.createdBy === 'admin:' + adminName && <p>{t('A different administrator must review this submission.')}</p>}
- {admin && ['pending', 'approved'].includes(boat.status) && (boat.status === 'approved' || boat.createdBy !== 'admin:' + adminName) && <form onSubmit={e => {
-                  e.preventDefault();
-                  run(() => mutate('review', {
-                    action: boat.status === 'approved' ? 'suspend' : 'approve',
-                    notes,
-                    checks
-                  }));
-                }}><h3>{t('Authority verification')}</h3>{boat.status === 'pending' && fleetChecks.map(([key, label]) => <label className="fleet-check" key={key}><input type="checkbox" checked={Boolean(checks[key])} onChange={e => setChecks({
-                      ...checks,
-                      [key]: e.target.checked
-                    })} />{t(label)}</label>)}<label>{t('Review notes / verified authority references')}<textarea required minLength={10} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} /></label><button disabled={busy} className="primary">{t(boat.status === 'approved' ? 'Suspend new bookings' : 'Approve vessel')}</button>{boat.status === 'pending' && <button type="button" disabled={busy || notes.trim().length < 10} onClick={() => run(() => mutate('review', {
-                    action: 'reject',
-                    notes
-                  }))}>{t('Reject with reason')}</button>}</form>}
- {admin && boat.ownerVerification && <p>{t('Owner verification')}: {t(boat.ownerVerification.mobileVerified && boat.ownerVerification.identityVerified ? 'Verified' : 'Not verified')}</p>}
- {boat.review && <p>{t('Review notes')}: {boat.review.notes} {boat.review.suspensionReason}</p>}{boat.audit && <><h3>{t('Audit history')}</h3><ul>{boat.audit.map((event, index) => <li key={index}>{event.at} · {t(event.action)} · {event.revision} {admin && event.actor && <> · {event.actor}</>}</li>)}</ul></>}
- </>}
- </>}
- </section></div></>}
- </main></>;
+                        <p>
+                          {t(
+                            'A qualified captain is required. The numbered seat plan must match the actual boat and certified passenger capacity.',
+                          )}
+                        </p>
+                        <button className="primary" disabled={busy || (!admin && !ownerVerified)}>
+                          {t(creating ? 'Create draft' : 'Save details as draft')}
+                        </button>
+                      </form>
+                    )}
+                    {boat && !editable && (
+                      <dl>
+                        {Object.entries(boat.details)
+                          .filter(([key]) => !['tone', 'amenities'].includes(key))
+                          .map(([key, value]) => (
+                            <div key={key}>
+                              <dt>
+                                {t(
+                                  {
+                                    name: 'Boat name',
+                                    operatorName: 'Owner / operator legal name',
+                                    registrationNumber: 'Registration number',
+                                    registrationAuthority: 'Registration authority',
+                                    description: 'Public description',
+                                    boardingInstructions: 'Boarding instructions',
+                                    type: 'Boat type',
+                                    propulsion: 'Propulsion',
+                                    pier: 'Boarding pier',
+                                    capacity: 'Certified passenger capacity',
+                                    lifeJackets: 'Life jackets including captain',
+                                    fare: 'Fare (paise)',
+                                    timeZone: 'Local time zone',
+                                    jurisdiction: 'Jurisdiction',
+                                    captainIncluded: 'Captain included',
+                                  }[key] || key,
+                                )}
+                              </dt>
+                              <dd>
+                                {typeof value === 'boolean'
+                                  ? t(value ? 'Yes' : 'No')
+                                  : t(String(value))}
+                              </dd>
+                            </div>
+                          ))}
+                      </dl>
+                    )}
+                    {boat && (
+                      <>
+                        {admin && !boat.ownerId && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              run(() =>
+                                mutate('owner', {
+                                  ownerEmail,
+                                  notes,
+                                  declaration: ownerAuthority,
+                                }),
+                              );
+                            }}
+                          >
+                            <h3>{t('Link verified owner')}</h3>
+                            <p>
+                              {t(
+                                'Linking an owner pauses new bookings and requires a fresh admin review. Existing tickets remain unchanged.',
+                              )}
+                            </p>
+                            <label>
+                              {t('Verified owner account email')}
+                              <input
+                                required
+                                type="email"
+                                value={ownerEmail}
+                                onChange={(e) => setOwnerEmail(e.target.value)}
+                              />
+                            </label>
+                            <label>
+                              {t('Review notes')}
+                              <textarea
+                                required
+                                minLength={10}
+                                maxLength={2000}
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                              />
+                            </label>
+                            <label className="fleet-check">
+                              <input
+                                type="checkbox"
+                                required
+                                checked={ownerAuthority}
+                                onChange={(e) => setOwnerAuthority(e.target.checked)}
+                              />
+                              {t('I verified this account is authorized to operate the boat.')}
+                            </label>
+                            <button disabled={busy || !ownerAuthority}>
+                              {t('Link verified owner')}
+                            </button>
+                          </form>
+                        )}
+                        <h3>{t('Numbered passenger seats')}</h3>
+                        <div className="fleet-seat-preview">
+                          {seatLayout(boat.details).map((seat) => (
+                            <span key={seat.id}>{seat.id}</span>
+                          ))}
+                        </div>
+                        <DocumentRenewals
+                          key={boat.id + boat.revision}
+                          boat={boat}
+                          admin={admin}
+                          onChanged={() => select(boat)}
+                        />
+                        <DocumentReminders
+                          key={boat.id}
+                          boatId={boat.id}
+                          revision={boat.revision}
+                          admin={admin}
+                        />
+                        <h3>{t('Private documents')}</h3>
+                        <p>
+                          {t(
+                            'PDF, PNG or JPEG only; maximum 5 MB per file. Provide issuer details and real validity dates. Documents remain private.',
+                          )}
+                        </p>
+                        <ul>
+                          {boatDocumentTypes.map((type) => {
+                            const document = boat.documents[type.id];
+                            return (
+                              <li key={type.id}>
+                                {t(type.label)}:{' '}
+                                {document ? (
+                                  <>
+                                    <a href={`${base}/${boat.id}/documents/${document.id}`}>
+                                      {t('Download')}
+                                    </a>{' '}
+                                    · {document.number} ·{' '}
+                                    {document.expiresOn || t('No expiry recorded')}
+                                  </>
+                                ) : (
+                                  t('Missing')
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        {editable && (
+                          <form
+                            className="fleet-details"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              run(async () => {
+                                if (!file || file.size > 5 * 1024 * 1024)
+                                  throw new Error('Choose a supported file up to 5 MB.');
+                                await mutate('documents', {
+                                  ...upload,
+                                  declaration: renewalDeclaration,
+                                  mime: file.type,
+                                  data: await readFile(file),
+                                });
+                                setFile(null);
+                                setRenewalDeclaration(false);
+                              });
+                            }}
+                          >
+                            <label>
+                              {t('Document category')}
+                              <select
+                                value={upload.category}
+                                onChange={(e) =>
+                                  setUpload({
+                                    ...upload,
+                                    category: e.target.value,
+                                  })
+                                }
+                              >
+                                {boatDocumentTypes.map((type) => (
+                                  <option key={type.id} value={type.id}>
+                                    {t(type.label)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {['number', 'issuer', 'issuedOn', 'expiresOn'].map((key) => (
+                              <label key={key}>
+                                {t(
+                                  {
+                                    number: 'Document number',
+                                    issuer: 'Issuing authority',
+                                    issuedOn: 'Issue date',
+                                    expiresOn: 'Expiry date',
+                                  }[key],
+                                )}
+                                <input
+                                  required={
+                                    key !== 'expiresOn' ||
+                                    boatDocumentTypes.find((type) => type.id === upload.category)
+                                      .expiring
+                                  }
+                                  type={key.endsWith('On') ? 'date' : 'text'}
+                                  value={upload[key]}
+                                  onChange={(e) =>
+                                    setUpload({
+                                      ...upload,
+                                      [key]: e.target.value,
+                                    })
+                                  }
+                                />
+                              </label>
+                            ))}
+                            <label>
+                              {t('Document file')}
+                              <input
+                                key={boat.revision}
+                                required
+                                type="file"
+                                accept="application/pdf,image/png,image/jpeg"
+                                onChange={(e) => setFile(e.target.files[0])}
+                              />
+                            </label>
+                            {boat.status === 'approved' && (
+                              <label className="fleet-check">
+                                <input
+                                  type="checkbox"
+                                  checked={renewalDeclaration}
+                                  onChange={(event) => setRenewalDeclaration(event.target.checked)}
+                                />
+                                {t(
+                                  'I confirm this renewal is authentic and applies to the same boat.',
+                                )}
+                              </label>
+                            )}
+                            <button
+                              disabled={
+                                busy || !file || (boat.status === 'approved' && !renewalDeclaration)
+                              }
+                            >
+                              {t('Upload document')}
+                            </button>
+                          </form>
+                        )}
+                        {canEdit && ['draft', 'rejected'].includes(boat.status) && (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              run(() =>
+                                mutate('submit', {
+                                  declaration,
+                                }),
+                              );
+                            }}
+                          >
+                            <label className="fleet-check">
+                              <input
+                                type="checkbox"
+                                required
+                                checked={declaration}
+                                onChange={(e) => setDeclaration(e.target.checked)}
+                              />
+                              {t(
+                                'I am authorized to operate this boat. Details and documents are authentic, current and match the actual boat.',
+                              )}
+                            </label>
+                            <button
+                              className="primary"
+                              disabled={busy || !declaration || (!admin && !ownerVerified)}
+                            >
+                              {t('Submit for admin review')}
+                            </button>
+                          </form>
+                        )}
+                        {boat.status === 'pending' && (
+                          <button disabled={busy} onClick={() => run(() => mutate('withdraw', {}))}>
+                            {t('Withdraw submission')}
+                          </button>
+                        )}
+                        {admin &&
+                          boat.status === 'pending' &&
+                          boat.createdBy === 'admin:' + adminName && (
+                            <p>{t('A different administrator must review this submission.')}</p>
+                          )}
+                        {admin &&
+                          ['pending', 'approved'].includes(boat.status) &&
+                          (boat.status === 'approved' ||
+                            boat.createdBy !== 'admin:' + adminName) && (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                run(() =>
+                                  mutate('review', {
+                                    action: boat.status === 'approved' ? 'suspend' : 'approve',
+                                    notes,
+                                    checks,
+                                  }),
+                                );
+                              }}
+                            >
+                              <h3>{t('Authority verification')}</h3>
+                              {boat.status === 'pending' &&
+                                fleetChecks.map(([key, label]) => (
+                                  <label className="fleet-check" key={key}>
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(checks[key])}
+                                      onChange={(e) =>
+                                        setChecks({
+                                          ...checks,
+                                          [key]: e.target.checked,
+                                        })
+                                      }
+                                    />
+                                    {t(label)}
+                                  </label>
+                                ))}
+                              <label>
+                                {t('Review notes / verified authority references')}
+                                <textarea
+                                  required
+                                  minLength={10}
+                                  maxLength={2000}
+                                  value={notes}
+                                  onChange={(e) => setNotes(e.target.value)}
+                                />
+                              </label>
+                              <button disabled={busy} className="primary">
+                                {t(
+                                  boat.status === 'approved'
+                                    ? 'Suspend new bookings'
+                                    : 'Approve vessel',
+                                )}
+                              </button>
+                              {boat.status === 'pending' && (
+                                <button
+                                  type="button"
+                                  disabled={busy || notes.trim().length < 10}
+                                  onClick={() =>
+                                    run(() =>
+                                      mutate('review', {
+                                        action: 'reject',
+                                        notes,
+                                      }),
+                                    )
+                                  }
+                                >
+                                  {t('Reject with reason')}
+                                </button>
+                              )}
+                            </form>
+                          )}
+                        {admin && boat.ownerVerification && (
+                          <p>
+                            {t('Owner verification')}:{' '}
+                            {t(
+                              boat.ownerVerification.mobileVerified &&
+                                boat.ownerVerification.identityVerified
+                                ? 'Verified'
+                                : 'Not verified',
+                            )}
+                          </p>
+                        )}
+                        {boat.review && (
+                          <p>
+                            {t('Review notes')}: {boat.review.notes} {boat.review.suspensionReason}
+                          </p>
+                        )}
+                        {boat.audit && (
+                          <>
+                            <h3>{t('Audit history')}</h3>
+                            <ul>
+                              {boat.audit.map((event, index) => (
+                                <li key={index}>
+                                  {event.at} · {t(event.action)} · {event.revision}{' '}
+                                  {admin && event.actor && <> · {event.actor}</>}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+      </main>
+    </>
+  );
 }

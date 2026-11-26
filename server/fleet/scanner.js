@@ -1,19 +1,21 @@
+/** @file Private malware scanner integration for uploaded boat documents. */
 import net from 'node:net';
 import { ApiError } from '../errors.js';
 export function documentScanner(env = process.env) {
   const required = env.NODE_ENV === 'production',
     host = env.CLAMAV_HOST?.trim(),
     port = Number(env.CLAMAV_PORT || 3310);
-  return async bytes => {
+  return async (bytes) => {
     if (!host) {
       if (required) throw new ApiError(503, 'Document scanning is unavailable. Try again later.');
       return 'not_scanned';
     }
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new ApiError(503, 'Document scanning is unavailable.');
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+      throw new ApiError(503, 'Document scanning is unavailable.');
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({
         host,
-        port
+        port,
       });
       let response = '',
         done = false;
@@ -36,11 +38,14 @@ export function documentScanner(env = process.env) {
         }
         socket.write(Buffer.alloc(4));
       });
-      socket.on('data', chunk => {
+      socket.on('data', (chunk) => {
         response += chunk.toString('utf8');
         if (response.length > 4096) return finish(new ApiError(503, 'Document scan failed.'));
         if (response.includes('\0') || response.includes('\n')) {
-          if (/: OK\s*\0?$/.test(response)) finish(null, 'clean');else if (/ FOUND/.test(response)) finish(new ApiError(400, 'Document rejected by security scanning.'));else finish(new ApiError(503, 'Document scan failed.'));
+          if (/: OK\s*\0?$/.test(response)) finish(null, 'clean');
+          else if (/ FOUND/.test(response))
+            finish(new ApiError(400, 'Document rejected by security scanning.'));
+          else finish(new ApiError(503, 'Document scan failed.'));
         }
       });
       socket.on('end', () => {

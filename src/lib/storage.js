@@ -1,3 +1,4 @@
+/** @file Reads only safe legacy browser preferences; customer records belong on the server. */
 export const CURRENCY_KEY = 'nautica.web.currency';
 export const PASSES_KEY = 'nautica.web.passes';
 
@@ -6,7 +7,10 @@ export function readStored(key, fallback) {
     const value = localStorage.getItem(key);
     return { value: value ? JSON.parse(value) : fallback, error: null };
   } catch {
-    return { value: fallback, error: 'Browser storage is unavailable or contains unreadable data.' };
+    return {
+      value: fallback,
+      error: 'Browser storage is unavailable or contains unreadable data.',
+    };
   }
 }
 export function loadCurrency() {

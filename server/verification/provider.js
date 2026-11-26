@@ -1,8 +1,13 @@
+/** @file Server-only authorized identity bridge integration and signed evidence validation. */
 import { ApiError } from '../errors.js';
 // Adapter for a merchant-controlled bridge to an authorized identity provider.
 // This is an explicit integration contract, not an invented UIDAI API.
-export function identityProvider(env = process.env, transport = fetch, onHealth = ()=>{}) {
-  const report=value=>{try{Promise.resolve(onHealth(value)).catch(()=>{});}catch{}};
+export function identityProvider(env = process.env, transport = fetch, onHealth = () => {}) {
+  const report = (value) => {
+    try {
+      Promise.resolve(onHealth(value)).catch(() => {});
+    } catch {}
+  };
   const base = env.IDENTITY_BRIDGE_URL,
     key = env.IDENTITY_BRIDGE_KEY,
     checkout = env.IDENTITY_CHECKOUT_ORIGIN;
@@ -10,7 +15,15 @@ export function identityProvider(env = process.env, transport = fetch, onHealth 
   try {
     const url = new URL(base),
       origin = new URL(checkout);
-    enabled = url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && origin.protocol === 'https:' && origin.origin === checkout && key?.length >= 32;
+    enabled =
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      origin.protocol === 'https:' &&
+      origin.origin === checkout &&
+      key?.length >= 32;
   } catch {}
   async function call(path, body) {
     if (!enabled) throw new ApiError(503, 'Identity verification is not configured.');
@@ -20,49 +33,65 @@ export function identityProvider(env = process.env, transport = fetch, onHealth 
         redirect: 'error',
         headers: {
           Authorization: 'Bearer ' + key,
-          ...(body ? {
-            'Content-Type': 'application/json'
-          } : {})
+          ...(body
+            ? {
+                'Content-Type': 'application/json',
+              }
+            : {}),
         },
-        ...(body ? {
-          body: JSON.stringify(body)
-        } : {}),
-        signal: AbortSignal.timeout(12000)
+        ...(body
+          ? {
+              body: JSON.stringify(body),
+            }
+          : {}),
+        signal: AbortSignal.timeout(12000),
       });
-      if (!response.ok){const error=new Error();error.providerReachable=response.status<500&&![401,403,429].includes(response.status);throw error;}
+      if (!response.ok) {
+        const error = new Error();
+        error.providerReachable =
+          response.status < 500 && ![401, 403, 429].includes(response.status);
+        throw error;
+      }
       const result = await response.json();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error();
-      report(true);return result;
+      report(true);
+      return result;
     } catch (error) {
-      report(error.providerReachable===true);throw new ApiError(503, 'Identity verification is temporarily unavailable.');
+      report(error.providerReachable === true);
+      throw new ApiError(503, 'Identity verification is temporarily unavailable.');
     }
   }
   return {
     enabled,
-    async start({
-      userId,
-      requestId,
-      method
-    }) {
+    async start({ userId, requestId, method }) {
       const result = await call('/sessions', {
         subject: userId,
         requestId,
         method,
         purpose: 'boat_owner_registration',
-        consentVersion: 'owner-identity-v1'
+        consentVersion: 'owner-identity-v1',
       });
       let url;
       try {
         url = new URL(result.url);
       } catch {}
-      if (!url || url.origin !== checkout || url.username || url.password || url.hash || typeof result.id !== 'string' || !/^[a-zA-Z0-9_-]{8,150}$/.test(result.id)) throw new ApiError(503, 'Identity verification is temporarily unavailable.');
+      if (
+        !url ||
+        url.origin !== checkout ||
+        url.username ||
+        url.password ||
+        url.hash ||
+        typeof result.id !== 'string' ||
+        !/^[a-zA-Z0-9_-]{8,150}$/.test(result.id)
+      )
+        throw new ApiError(503, 'Identity verification is temporarily unavailable.');
       return {
         id: result.id,
-        url: url.href
+        url: url.href,
       };
     },
     async result(id) {
       return call('/sessions/' + encodeURIComponent(id));
-    }
+    },
   };
 }

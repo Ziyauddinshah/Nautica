@@ -1,3 +1,4 @@
+/** @file Runs shared refund reconciliation and document reminder jobs as an operator command. */
 import { openRepository } from '../server/runtime.js';
 import { Refunds } from '../server/aftercare/refunds.js';
 import { aftercareWorker } from '../server/aftercare/worker.js';
@@ -18,19 +19,21 @@ try {
   const gateway = createRazorpayGateway({
     keyId: process.env.RAZORPAY_KEY_ID,
     keySecret: process.env.RAZORPAY_KEY_SECRET,
-    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
   });
   worker = aftercareWorker({
     refunds: new Refunds(repo, gateway),
     reminders: repo.reminders,
     emailService: email,
     smsService: sms,
-    remindersEnabled: process.env.DOCUMENT_REMINDERS_ENABLED !== 'false'
+    remindersEnabled: process.env.DOCUMENT_REMINDERS_ENABLED !== 'false',
   });
   const result = await worker.kick();
   if (result?.ok === false) throw new Error('Aftercare run failed; inspect shared jobs.');
   await Promise.all([email.drain(), sms.drain()]);
-  console.log('Aftercare pass completed. Inspect admin refund and document reminder status for provider outcomes.');
+  console.log(
+    'Aftercare pass completed. Inspect admin refund and document reminder status for provider outcomes.',
+  );
 } catch {
   console.error('Aftercare run failed. Check private server configuration and durable job status.');
   process.exitCode = 1;

@@ -52,6 +52,7 @@ synchronizer or an automatic merge.
 
    On an old checkout the command may still be named `db:backup`. The SQLite source
    must exist. Do not copy only the main file from a running WAL database.
+
 4. Set the destination's private online MONGODB_URI and a **new, empty**
    MONGODB_DB. Do **not** run db:init on this destination first. Run:
 
@@ -65,6 +66,7 @@ synchronizer or an automatic merge.
    marks the namespace `ready` only when the import completes. App replicas cannot
    start against a partial import. Existing initialized destinations are refused,
    even if empty; existing data is never overwritten or merged.
+
 5. Compare counts and database identity, sign in to a customer and admin account,
    inspect bookings/payment references, occupied seats and notification state.
    Ownership is preserved by user ID; old guest bookings are not claimed by email.
