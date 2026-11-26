@@ -1,3 +1,4 @@
+import { emailVerified } from '../security/email-proof.js';
 /** @file Account validation, password verification and public account projections. */
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { ApiError } from '../errors.js';
@@ -8,6 +9,7 @@ export function publicUser(row) {
     email: row.email,
     phone: row.phone,
     createdAt: row.created_at,
+    emailVerified: emailVerified(row),
   };
 }
 export function profile(input) {
@@ -30,6 +32,7 @@ export function profile(input) {
 export function passwordValid(password) {
   return typeof password === 'string' && password.length >= 12 && password.length <= 256;
 }
+// Legacy SQLite regression/migration only. The online runtime uses bounded passwordMatchesAsync.
 export function passwordMatches(row, password) {
   const candidate = scryptSync(password, row?.salt || 'nautica-user-dummy-salt', 64, {
     N: 32768,

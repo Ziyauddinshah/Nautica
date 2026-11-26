@@ -1,3 +1,4 @@
+import { emailVerified } from '../security/email-proof.js';
 /** @file Durable email jobs with fenced claims and bounded retries across replicas. */
 import { randomUUID } from 'node:crypto';
 const delays = [60000, 300000, 900000, 3600000, 21600000];
@@ -21,7 +22,10 @@ export class MongoOutboxStore {
       {
         attempts: { $lt: 5 },
         $or: [
-          { status: { $in: ['pending', 'failed'] }, $expr: { $lte: ['$nextAttemptAt', time] } },
+          {
+            status: { $in: ['pending', 'failed', 'verification_required'] },
+            $expr: { $lte: ['$nextAttemptAt', time] },
+          },
           { status: 'sending', $expr: { $lte: ['$leaseUntil', time] } },
         ],
       },
@@ -39,8 +43,39 @@ export class MongoOutboxStore {
     );
   }
   async record(job) {
-    if (job.kind === 'notice') return this.repo.reminders.message(job, 'email');
-    return this.repo.c('bookings').findOne({ _id: job.bookingId });
+    const record =
+      job.kind === 'notice'
+        ? await this.repo.reminders.message(job, 'email')
+        : await this.repo.c('bookings').findOne({ _id: job.bookingId });
+    if (
+      !record ||
+      record.suppress ||
+      (job.kind !== 'notice' && record.status === 'cancelled') ||
+      job.audience === 'admin'
+    )
+      return record;
+    const recipient = record.recipientOverride || job.recipient;
+    let expected = record.userId || job.recipientUserId;
+    if (!expected && job.bookingId)
+      expected = (await this.repo.c('bookings').findOne({ _id: job.bookingId }))?.userId;
+    if (!expected && job.boatId)
+      expected = (await this.repo.c('boats').findOne({ _id: job.boatId }))?.ownerId;
+    const user =
+      typeof recipient === 'string' && expected
+        ? await this.repo.c('users').findOne({ _id: expected, email: recipient.toLowerCase() })
+        : null;
+    return emailVerified(user) ? record : { holdForVerification: true };
+  }
+  deferForVerification(job) {
+    return this.outbox.updateOne(this.fence(job), {
+      $set: {
+        status: 'verification_required',
+        nextAttemptAt: Date.now() + 300000,
+        attempts: Math.max(0, job.attempts - 1),
+        leaseUntil: 0,
+      },
+      $unset: { leaseToken: '' },
+    });
   }
   suppress(job) {
     return this.outbox.updateOne(this.fence(job), {

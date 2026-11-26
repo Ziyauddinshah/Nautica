@@ -1,5 +1,31 @@
 /** @file Feature message/condition catalog; no private provider settings are exposed. */
 export const hi = {
+  'Verify your email': 'अपना ईमेल सत्यापित करें',
+  'Confirm your email before booking or registering a boat. Booking emails are held until verification.':
+    'बुकिंग या नाव पंजीकरण से पहले अपना ईमेल सत्यापित करें। सत्यापन तक बुकिंग ईमेल रोके जाते हैं।',
+  'Verification link requested. Check your inbox and spam folder.':
+    'सत्यापन लिंक का अनुरोध भेजा गया है। इनबॉक्स और स्पैम फ़ोल्डर देखें।',
+  'Send verification link': 'सत्यापन लिंक भेजें',
+  'Reload session': 'सत्र फिर जाँचें',
+  'Sign in to the same account in another tab, then return here and reload your session. Keep this page open.':
+    'दूसरे टैब में उसी खाते में साइन इन करें, फिर यहाँ आकर सत्र फिर जाँचें। यह पेज खुला रखें।',
+  'Confirm email verification': 'ईमेल सत्यापन की पुष्टि करें',
+  'Email verified. You can now continue booking.':
+    'ईमेल सत्यापित हो गया। अब आप बुकिंग जारी रख सकते हैं।',
+  'This verification link is invalid or expired. Sign in and request a new link.':
+    'यह सत्यापन लिंक अमान्य है या समाप्त हो गया है। साइन इन करके नया लिंक माँगें।',
+  'Verify your email address before booking or registering a boat.':
+    'बुकिंग या नाव पंजीकरण से पहले अपना ईमेल पता सत्यापित करें।',
+  'Verification email is temporarily unavailable. Please try again later.':
+    'सत्यापन ईमेल अभी उपलब्ध नहीं है। थोड़ी देर बाद प्रयास करें।',
+  'Verify your email to receive updates': 'सूचनाएँ पाने के लिए ईमेल सत्यापित करें',
+  'Choose a less common password that has not appeared in known data breaches.':
+    'ऐसा कम प्रचलित पासवर्ड चुनें जो ज्ञात डेटा लीक में न मिला हो।',
+  'Password safety checking is temporarily unavailable. Please try again later.':
+    'पासवर्ड की सुरक्षा जाँच अभी उपलब्ध नहीं है। थोड़ी देर बाद प्रयास करें।',
+  'Sign-in is busy. Please try again shortly.':
+    'साइन इन सेवा व्यस्त है। थोड़ी देर बाद प्रयास करें।',
+
   'Illustration · photo not supplied': 'चित्रांकन · तस्वीर उपलब्ध नहीं है',
   'Hindi listing details (optional)': 'हिन्दी में नाव का विवरण (वैकल्पिक)',
   'Hindi description': 'हिन्दी विवरण',

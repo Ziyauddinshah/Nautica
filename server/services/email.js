@@ -43,6 +43,10 @@ export function createSharedEmailService(
       if (!job) break;
       try {
         const record = await store.record(job);
+        if (record?.holdForVerification) {
+          await store.deferForVerification(job);
+          continue;
+        }
         if (record?.suppress || (!record?.notice && record?.status === 'cancelled')) {
           await store.suppress(job);
           continue;
@@ -112,6 +116,24 @@ export function createSharedEmailService(
     drain: kick,
     retry,
     sendPasswordReset,
+    sendVerification(job) {
+      if (!mailer || stopped) return Promise.resolve(false);
+      const hi = job.language === 'hi',
+        subject = hi ? 'Nautica: अपना ईमेल सत्यापित करें' : 'Nautica: verify your email';
+      const text =
+        (hi
+          ? 'इस खाते का ईमेल सत्यापित करने के लिए लिंक खोलें और उसी खाते में साइन इन करें। लिंक 15 मिनट तक मान्य है। अनुरोध नहीं किया तो इसे अनदेखा करें।'
+          : 'To verify this account email, open the link and sign in to the same account. This link expires in 15 minutes. If you did not request it, ignore this message.') +
+        '\n\n' +
+        job.link;
+      const pending = Promise.resolve()
+        .then(() => sendMail({ from: config.user, to: job.email, subject, text }))
+        .then(() => true)
+        .catch(() => false)
+        .finally(() => resetSends.delete(pending));
+      resetSends.add(pending);
+      return pending;
+    },
     start() {
       stopped = false;
       kick();

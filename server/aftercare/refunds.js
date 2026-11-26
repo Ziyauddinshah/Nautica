@@ -188,6 +188,7 @@ export class Refunds {
               {
                 audience: 'customer',
                 email: payment?.payload?.email,
+                userId: payment?.userId,
                 phone: payment?.payload?.phone,
               },
               {
@@ -377,6 +378,7 @@ export class Refunds {
               {
                 audience: 'customer',
                 email: payment?.payload?.email,
+                userId: payment?.userId,
                 phone: payment?.payload?.phone,
               },
               {

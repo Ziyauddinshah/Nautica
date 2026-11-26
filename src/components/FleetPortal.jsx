@@ -1,3 +1,4 @@
+import { EmailVerificationNotice } from './EmailVerification.jsx';
 /** @file React fleet portal view; authorization and authoritative state remain on the server. */
 import ListingPhotoUpload from './ListingPhotoUpload.jsx';
 import AdminSignIn from './AdminSignIn.jsx';
@@ -183,6 +184,7 @@ export default function FleetPortal({ admin = false, user, onUser }) {
         </nav>
       </header>
       <main className="fleet-portal">
+        {!admin && <EmailVerificationNotice user={user} />}
         <h1>{t(admin ? 'Fleet review' : 'Register a boat')}</h1>
         <p>
           {t(

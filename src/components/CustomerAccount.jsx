@@ -1,3 +1,4 @@
+import { EmailVerificationNotice } from './EmailVerification.jsx';
 /** @file React customer account view; authorization and authoritative state remain on the server. */
 import UpcomingJourney from './UpcomingJourney.jsx';
 import { refundStatusText } from '../lib/refundStatus.js';
@@ -30,6 +31,7 @@ const emailStatusText = (status) =>
     sending: 'Sending',
     sent: 'Sent',
     failed: 'Delivery delayed',
+    verification_required: 'Verify your email to receive updates',
   })[status] || 'Not requested';
 export default function CustomerAccount({ user, onUser, currency, onCurrency }) {
   const { t, locale } = useI18n();
@@ -241,6 +243,7 @@ export default function CustomerAccount({ user, onUser, currency, onCurrency }) 
             {next?.owner === user.id && (
               <UpcomingJourney record={next.record} onPass={setSelected} />
             )}
+            <EmailVerificationNotice user={user} />
             <div className="account-summary">
               {[
                 ['upcoming', 'Upcoming journeys', summary.upcoming],

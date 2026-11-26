@@ -181,6 +181,7 @@ export function createApp(
           return send(200, repo.fleet ? await repo.fleet.catalog() : { boats: [] });
         if (url.pathname.startsWith('/api/owner/verification')) {
           const user = await repo.authenticateUser(userToken(req));
+          if (req.method === 'POST' && repo.emailProof) await repo.emailProof.require(user.id);
           return await verificationRequest({
             req,
             url,
@@ -338,6 +339,20 @@ export function createApp(
             typeof input?.email === 'string' ? input.email.trim().toLowerCase().slice(0, 150) : '',
           );
           const result = register ? await repo.registerUser(input) : await repo.loginUser(input);
+          if (register && repo.emailProof && emailService?.sendVerification) {
+            const settings = emailService.status();
+            if (settings?.passwordResetEnabled)
+              try {
+                const job = await repo.emailProof.request(result.user.id, {
+                  enabled: true,
+                  siteOrigin: settings.siteOrigin,
+                });
+                if (job) emailService.sendVerification({ ...job, language });
+              } catch {
+                /* Account is valid; the signed-in customer can request another link. */
+              }
+          }
+
           return send(
             register ? 201 : 200,
             { user: result.user },
@@ -346,6 +361,30 @@ export function createApp(
         }
         if (url.pathname.startsWith('/api/user/')) {
           const user = await repo.authenticateUser(userToken(req));
+          if (req.method === 'POST' && url.pathname === '/api/user/email/request') {
+            await throttle(req, 'email-verification', user.id);
+            if (!repo.emailProof || !emailService?.sendVerification)
+              throw new ApiError(
+                503,
+                'Verification email is temporarily unavailable. Please try again later.',
+              );
+            const settings = emailService.status(),
+              job = await repo.emailProof.request(user.id, {
+                enabled: settings.passwordResetEnabled,
+                siteOrigin: settings.siteOrigin,
+              });
+            send(200, { ok: true });
+            if (job) emailService.sendVerification({ ...job, language });
+            return;
+          }
+          if (req.method === 'POST' && url.pathname === '/api/user/email/verify') {
+            await throttle(req, 'email-verification-check', user.id);
+            if (!repo.emailProof) throw new ApiError(503, 'Verification is unavailable.');
+            const input = await body();
+            const result = await repo.emailProof.verify(user.id, input?.token);
+            emailService?.kick();
+            return send(200, result);
+          }
           const cancel = url.pathname.match(
             /^\/api\/user\/bookings\/(NTC-[A-F0-9]{12})\/cancellation$/,
           );
@@ -503,6 +542,30 @@ export function createApp(
             }))
           )
             return;
+          if (req.method === 'POST' && url.pathname === '/api/user/email/request') {
+            await throttle(req, 'email-verification', user.id);
+            if (!repo.emailProof || !emailService?.sendVerification)
+              throw new ApiError(
+                503,
+                'Verification email is temporarily unavailable. Please try again later.',
+              );
+            const settings = emailService.status(),
+              job = await repo.emailProof.request(user.id, {
+                enabled: settings.passwordResetEnabled,
+                siteOrigin: settings.siteOrigin,
+              });
+            send(200, { ok: true });
+            if (job) emailService.sendVerification({ ...job, language });
+            return;
+          }
+          if (req.method === 'POST' && url.pathname === '/api/user/email/verify') {
+            await throttle(req, 'email-verification-check', user.id);
+            if (!repo.emailProof) throw new ApiError(503, 'Verification is unavailable.');
+            const input = await body();
+            const result = await repo.emailProof.verify(user.id, input?.token);
+            emailService?.kick();
+            return send(200, result);
+          }
           const cancel = url.pathname.match(
             /^\/api\/admin\/bookings\/(NTC-[A-F0-9]{12})\/cancellation$/,
           );
@@ -647,6 +710,8 @@ export function createApp(
         '/admin/',
         '/account',
         '/account/',
+        '/verify-email',
+        '/verify-email/',
         '/reset-password',
         '/reset-password/',
       ].includes(url.pathname)

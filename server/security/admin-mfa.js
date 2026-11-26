@@ -1,5 +1,6 @@
+import { passwordMatchesAsync } from './passwords.js';
 /** @file Admin password challenges, encrypted TOTP enrollment, recovery codes and trusted reset. */
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { ApiError, digest } from '../errors.js';
 import { base32, matchingStep, secretBox } from './totp.js';
 const bad = () => new ApiError(401, 'The verification code is incorrect, expired or already used.');
@@ -30,17 +31,16 @@ export class AdminMfa {
       },
     );
   }
-  password(user, value) {
+  async password(user, value) {
     if (typeof value !== 'string' || value.length > 256) return false;
-    const candidate = scryptSync(value, user?.salt || 'nautica-dummy-salt', 64);
-    return Boolean(user && timingSafeEqual(candidate, Buffer.from(user.hash, 'hex')));
+    return passwordMatchesAsync(user, value, {});
   }
   async begin(username, password) {
     this.ready();
     const user = await this.c('admins').findOne({
       _id: username,
     });
-    if (!this.password(user, password)) {
+    if (!(await this.password(user, password))) {
       await this.audit('admin_password_failed', username);
       throw new ApiError(401, 'Invalid admin username or password.');
     }
@@ -331,7 +331,7 @@ export class AdminMfa {
           session,
         },
       );
-      if (!this.password(user, input?.password)) return null;
+      if (!(await this.password(user, input?.password))) return null;
       const factor = this.factor(user, input?.code, this.box.open(user.mfa.secret, username));
       if (!factor) {
         await this.audit('admin_mfa_failed', username, session);
@@ -376,7 +376,7 @@ export class AdminMfa {
           session,
         },
       );
-      if (!this.password(user, password))
+      if (!(await this.password(user, password)))
         throw new ApiError(401, 'Invalid admin username or password.');
       await this.c('admins').updateOne(
         {

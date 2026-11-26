@@ -19,6 +19,7 @@ export async function enqueueNotice(repo, { id, notice, recipients, bookingId, b
     const jobId = id + ':' + target.audience,
       fields = {
         kind: 'notice',
+        ...(target.userId ? { recipientUserId: target.userId } : {}),
         event: notice.event,
         notice,
         audience: target.audience,
@@ -136,6 +137,7 @@ export async function bookingNotice(repo, record, event, heading, session) {
         {
           audience: 'customer',
           email: record.customer.email,
+          userId: record.userId,
           phone: record.customer.phone,
         },
         {

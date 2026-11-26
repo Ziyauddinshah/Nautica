@@ -1,3 +1,10 @@
+import { EmailProof } from '../security/email-proof.js';
+import {
+  derivePassword,
+  customerHashOptions,
+  passwordMatchesAsync,
+  PasswordPolicy,
+} from '../security/passwords.js';
 /** @file Shared MongoDB repository for sessions, bookings, inventory and transaction coordination. */
 import { Operations } from '../operations/repository.js';
 import { AdminMfa } from '../security/admin-mfa.js';
@@ -8,10 +15,10 @@ import { BoatRegistry } from '../fleet/repository.js';
 import { saveBookingPayment } from './payment-records.js';
 import { historyView, journeyEndExpression, paymentRow } from '../domain/history.js';
 import { setTimeout as delay } from 'node:timers/promises';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { ApiError, digest } from '../errors.js';
 import { tripInfo, validateBooking, buildBookingRecord } from '../domain/booking.js';
-import { profile, passwordValid, passwordMatches, publicUser } from '../domain/accounts.js';
+import { profile, passwordValid, publicUser } from '../domain/accounts.js';
 import { amounts, seatLayout, localDate } from '../../src/domain/booking.js';
 import { bookingView, paymentView } from '../views.js';
 import { transactionOptions } from './mongo-connection.js';
@@ -28,6 +35,8 @@ export class MongoRepository {
   constructor(connection) {
     Object.assign(this, connection);
     this.kind = 'mongodb';
+    this.emailProof = new EmailProof(this);
+    this.passwordPolicy = new PasswordPolicy({ required: Boolean(this.config?.production) });
     this.ops = new Operations(this);
     this.mfa = new AdminMfa(this);
     this.cancellations = new Cancellations(this);
@@ -92,32 +101,36 @@ export class MongoRepository {
       {
         id: category + ':ip:' + digest(ip || ''),
         limit:
-          category === 'payment-status'
-            ? 60
-            : ['owner-otp-send', 'owner-identity'].includes(category)
-              ? 10
-              : category === 'forgot'
-                ? 5
-                : category === 'register'
-                  ? 10
-                  : category === 'admin-login'
-                    ? 5
-                    : 15,
+          category === 'email-verification'
+            ? 3
+            : category === 'payment-status'
+              ? 60
+              : ['owner-otp-send', 'owner-identity'].includes(category)
+                ? 10
+                : category === 'forgot'
+                  ? 5
+                  : category === 'register'
+                    ? 10
+                    : category === 'admin-login'
+                      ? 5
+                      : 15,
       },
     ];
     if (identifier)
       keys.push({
         id: category + ':account:' + digest(identifier),
         limit:
-          category === 'payment-status'
-            ? 60
-            : ['owner-otp-send', 'owner-identity'].includes(category)
-              ? 3
-              : category === 'forgot'
+          category === 'email-verification'
+            ? 3
+            : category === 'payment-status'
+              ? 60
+              : ['owner-otp-send', 'owner-identity'].includes(category)
                 ? 3
-                : category === 'register'
-                  ? 10
-                  : 15,
+                : category === 'forgot'
+                  ? 3
+                  : category === 'register'
+                    ? 10
+                    : 15,
       });
     for (const { id, limit } of keys) {
       const fresh = { $lte: [{ $ifNull: ['$expiresAt', new Date(0)] }, '$$NOW'] };
@@ -164,13 +177,9 @@ export class MongoRepository {
     const fields = profile(input);
     if (!passwordValid(input.password))
       throw new ApiError(400, 'Choose a password between 12 and 256 characters.');
+    await this.passwordPolicy.check(input.password);
     const salt = randomBytes(16).toString('hex'),
-      hash = scryptSync(input.password, salt, 64, {
-        N: 32768,
-        r: 8,
-        p: 3,
-        maxmem: 64 * 1024 * 1024,
-      }).toString('hex');
+      hash = (await derivePassword(input.password, salt, customerHashOptions)).toString('hex');
     const user = {
       _id: randomUUID(),
       ...fields,
@@ -203,16 +212,20 @@ export class MongoRepository {
       input.password.length > 256
     )
       throw new ApiError(400, 'Enter a valid email and password.');
+    const checked = await this.c('users').findOne({ email: input.email.trim().toLowerCase() });
+    if (!(await passwordMatchesAsync(checked, input.password)))
+      throw new ApiError(401, 'Invalid email or password.');
     return this.transaction(async (session) => {
-      const user = await this.c('users').findOne(
-        { email: input.email.trim().toLowerCase() },
-        { session },
+      const current = await this.c('users').findOneAndUpdate(
+        { _id: checked._id, hash: checked.hash },
+        { $inc: { loginFence: 1 } },
+        { session, returnDocument: 'after' },
       );
-      if (!passwordMatches(user, input.password))
-        throw new ApiError(401, 'Invalid email or password.');
-      return this.newSession(user, session);
+      if (!current) throw new ApiError(401, 'Invalid email or password.');
+      return this.newSession(current, session);
     });
   }
+
   async authenticate(token, role) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token))
       throw new ApiError(
@@ -257,8 +270,9 @@ export class MongoRepository {
   async setAdmin(username, password) {
     if (!/^[a-zA-Z0-9_.@-]{3,80}$/.test(username) || !passwordValid(password))
       throw new Error('Use a valid username and a 12–256 character password.');
+    await this.passwordPolicy.check(password);
     const salt = randomBytes(16).toString('hex'),
-      hash = scryptSync(password, salt, 64).toString('hex');
+      hash = (await derivePassword(password, salt)).toString('hex');
     await this.transaction(async (session) => {
       await this.c('admins').updateOne(
         { _id: username },
@@ -286,23 +300,22 @@ export class MongoRepository {
         400,
         'Enter your current password and a new password of 12–256 characters.',
       );
+    const checked = await this.c('users').findOne({ _id: id });
+    if (!(await passwordMatchesAsync(checked, input.currentPassword)))
+      throw new ApiError(401, 'Current password is incorrect.');
+    await this.passwordPolicy.check(input.newPassword);
     if (input.currentPassword === input.newPassword)
       throw new ApiError(400, 'Choose a different new password.');
     await this.transaction(async (session) => {
       const user = await this.c('users').findOne({ _id: id }, { session });
-      if (!passwordMatches(user, input.currentPassword))
+      if (!user || user.hash !== checked.hash)
         throw new ApiError(401, 'Current password is incorrect.');
       await this.updatePassword(id, input.newPassword, session);
     });
   }
   async updatePassword(id, password, session) {
     const salt = randomBytes(16).toString('hex'),
-      hash = scryptSync(password, salt, 64, {
-        N: 32768,
-        r: 8,
-        p: 3,
-        maxmem: 64 * 1024 * 1024,
-      }).toString('hex');
+      hash = (await derivePassword(password, salt, customerHashOptions)).toString('hex');
     await this.c('users').updateOne(
       { _id: id },
       { $set: { salt, hash }, $inc: { authVersion: 1 } },
@@ -310,6 +323,7 @@ export class MongoRepository {
     );
     await this.c('sessions').deleteMany({ userId: id, role: 'user' }, { session });
     await this.c('resets').deleteMany({ userId: id }, { session });
+    await this.c('email_verifications').deleteMany({ userId: id }, { session });
   }
   async requestPasswordReset(input, { enabled = false, siteOrigin = '' } = {}) {
     const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
@@ -340,6 +354,13 @@ export class MongoRepository {
       throw badReset();
     if (!passwordValid(input.newPassword))
       throw new ApiError(400, 'Choose a password between 12 and 256 characters.');
+    const existing = await this.c('resets').findOne({
+      _id: digest(input.token),
+      expiresAt: { $gt: new Date() },
+    });
+    const owner = existing && (await this.c('users').findOne({ _id: existing.userId }));
+    if (!owner || (owner.authVersion || 0) !== existing.version) throw badReset();
+    await this.passwordPolicy.check(input.newPassword);
     await this.transaction(async (session) => {
       const reset = await this.c('resets').findOne(
         { _id: digest(input.token), expiresAt: { $gt: new Date() } },
@@ -387,6 +408,7 @@ export class MongoRepository {
     };
   }
   async createBooking(input, mode = 'seats', user, receipt = null, session = null) {
+    if (!receipt?.attemptId) await this.emailProof.require(user.id, session);
     if (!session)
       return this.transaction((tx) => this.createBooking(input, mode, user, receipt, tx));
     const existing = await this.c('bookings').findOne(

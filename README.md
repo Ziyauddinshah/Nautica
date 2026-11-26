@@ -229,3 +229,7 @@ recovery.
 
 Journey shortcuts, refund previews, reviewed real-photo listings and accessibility:
 [JOURNEY_LISTING_ACCESSIBILITY.md](JOURNEY_LISTING_ACCESSIBILITY.md).
+
+Customer credential protection: [CREDENTIAL_SECURITY.md](CREDENTIAL_SECURITY.md)
+explains required email verification, production breached-password screening,
+non-blocking hashing and rollout for existing accounts.

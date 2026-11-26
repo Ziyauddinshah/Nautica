@@ -1,3 +1,4 @@
+import { EmailVerificationNotice } from './EmailVerification.jsx';
 /** @file React booking dialog view; authorization and authoritative state remain on the server. */
 import LanguageSwitcher, { useI18n } from '../i18n/I18nProvider.jsx';
 import { useEffect, useRef, useState } from 'react';
@@ -135,6 +136,10 @@ export default function BookingDialog({
     }
   }
   function proceed() {
+    if (user?.emailVerified === false) {
+      setError('Verify your email address before booking or registering a boat.');
+      return;
+    }
     if (availabilityState !== 'ready') {
       setError('Current availability is not verified. Refresh seats before continuing.');
       return;
@@ -267,6 +272,7 @@ export default function BookingDialog({
         </button>
       </div>
       <div id="flow-body">
+        <EmailVerificationNotice user={user} />
         {trip && !activePass && (
           <>
             <ol className="booking-progress" aria-label={t('Booking progress')}>

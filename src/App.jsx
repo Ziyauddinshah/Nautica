@@ -1,3 +1,4 @@
+import VerifyEmail, { EmailVerificationNotice } from './components/EmailVerification.jsx';
 /** @file Coordinates public booking screens, route selection and application UI state. */
 import BoatDetails, { BoatPhoto } from './components/BoatDetails.jsx';
 import OperationsDashboard from './components/OperationsDashboard.jsx';
@@ -32,7 +33,7 @@ function Brand() {
     </a>
   );
 }
-export default function App({ resetToken = null }) {
+export default function App({ resetToken = null, verificationToken = null }) {
   const { t, locale } = useI18n();
   const [currency, setCurrency] = useState(loadCurrency);
   const [history, setHistory] = useState({
@@ -195,6 +196,8 @@ export default function App({ resetToken = null }) {
   if (window.location.pathname.replace(/\/$/, '') === '/admin/operations')
     return <OperationsDashboard />;
   if (window.location.pathname.replace(/\/$/, '') === '/admin') return <AdminDashboard />;
+  if (window.location.pathname.replace(/\/$/, '') === '/verify-email')
+    return <VerifyEmail user={user} onUser={setUser} token={verificationToken} />;
   if (window.location.pathname.replace(/\/$/, '') === '/reset-password')
     return <ResetPassword token={resetToken} onUser={setUser} />;
   if (window.location.pathname.replace(/\/$/, '') === '/account')
@@ -274,6 +277,7 @@ export default function App({ resetToken = null }) {
         </nav>
       </header>
       <main id="main-content" tabIndex={-1}>
+        <EmailVerificationNotice user={user} />
         <section className="hero">
           <div className="hero-copy">
             <p className="eyebrow">

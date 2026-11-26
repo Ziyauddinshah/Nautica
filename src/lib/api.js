@@ -39,7 +39,12 @@ export async function request(path, { method = 'GET', body, signal } = {}) {
     throw new ApiError('Something went wrong. Please try again later.', response.status);
   if (!response.ok)
     throw new ApiError(
-      response.status >= 500
+      response.status >= 500 &&
+      ![
+        'Password safety checking is temporarily unavailable. Please try again later.',
+        'Verification email is temporarily unavailable. Please try again later.',
+        'Sign-in is busy. Please try again shortly.',
+      ].includes(data.error)
         ? 'Something went wrong. Please try again later.'
         : typeof data.error === 'string'
           ? data.error

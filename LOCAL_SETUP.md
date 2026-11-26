@@ -78,3 +78,10 @@ The initial cancellation cutoff is 24 hours before departure, with admin approva
 ### Admin MFA and monitoring
 
 Set a private random 64-hex-character `ADMIN_MFA_ENCRYPTION_KEY` on every replica. Existing legacy admins require `npm run admin:mfa:reset` from a trusted interactive server terminal before enrollment at `/admin`. Use `/admin/operations` for alerts. Follow [ADMIN_SECURITY_OPERATIONS.md](ADMIN_SECURITY_OPERATIONS.md), including independent uptime monitoring and optional webhook delivery.
+
+Customer bookings now require email verification even in manual local development.
+Configure the existing Gmail SMTP settings and local `PUBLIC_ORIGIN` to receive a
+verification link. Automated tests use explicitly verified synthetic fixtures and
+fake senders; there is no runtime “mark everyone verified” switch. See
+[CREDENTIAL_SECURITY.md](CREDENTIAL_SECURITY.md) for existing-account rollout and
+production password-screening egress requirements.

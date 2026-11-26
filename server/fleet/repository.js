@@ -143,6 +143,7 @@ export class BoatRegistry {
           boat.ownerId = owner._id;
         }
         await this.repo.verification.require(boat.ownerId, session);
+        await this.repo.emailProof.require(boat.ownerId, session);
         if (actor.role === 'owner')
           await this.c('users').updateOne(
             {
@@ -289,6 +290,7 @@ export class BoatRegistry {
       );
       if (!user) throw new ApiError(400, 'Enter the registered email of a verified boat owner.');
       await this.repo.verification.require(user._id, session);
+      await this.repo.emailProof.require(user._id, session);
       boat.ownerId = user._id;
       boat.status = 'draft';
       boat.revision++;

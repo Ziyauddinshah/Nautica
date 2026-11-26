@@ -96,7 +96,7 @@ separately; no deployed image/HTTPS endpoint is claimed here.
   payments and test keys. Orders/capture checks are INR; USD is an indicative
   display using a fixed ₹83/USD conversion, not a USD charge or live FX quote.
 - Create individual admin credentials and restrict admin access as appropriate.
-  Admin MFA is implemented and required; complete enrollment as described in ADMIN_SECURITY_OPERATIONS.md. Customer email verification is not implemented. Arrange password
+  Admin MFA is implemented and required; complete enrollment as described in ADMIN_SECURITY_OPERATIONS.md. Customer email verification is required before new purchases; see CREDENTIAL_SECURITY.md. Arrange password
   recovery and incident response without sharing accounts.
 - Perform target-host security, accessibility, browser/printing/QR and load checks.
 

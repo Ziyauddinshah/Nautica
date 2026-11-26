@@ -20,6 +20,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [CHECKOUT_EXPERIENCE.md](../CHECKOUT_EXPERIENCE.md) | Seat selection, mobile checkout and payment recovery. |
 | [COMMERCIAL_LAUNCH.md](../COMMERCIAL_LAUNCH.md) | Multi-server commercial launch. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Working on Nautica. |
+| [CREDENTIAL_SECURITY.md](../CREDENTIAL_SECURITY.md) | Customer credential hardening. |
 | [Dockerfile](../Dockerfile) | Production application image build; no production secrets belong in image layers. |
 | [FLEET_REGISTRATION.md](../FLEET_REGISTRATION.md) | Boat registration — India / Varanasi. |
 | [JOURNEY_LISTING_ACCESSIBILITY.md](../JOURNEY_LISTING_ACCESSIBILITY.md) | Journey shortcuts, cancellation preview and accessible boat listings. |
@@ -104,6 +105,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [server/app.test.js](../server/app.test.js) | Regression tests for app behavior using isolated fixtures. |
 | [server/config.js](../server/config.js) | Validates runtime and production settings before the server starts. |
 | [server/contributor-safety.test.js](../server/contributor-safety.test.js) | Regression tests for contributor-safety behavior using isolated fixtures. |
+| [server/credential-hardening.test.js](../server/credential-hardening.test.js) | Password checks preserve existing hashes without blocking the event loop or exposing full hashes. |
 | [server/database-path.js](../server/database-path.js) | Resolves legacy SQLite test/migration paths and protects public directories. |
 | [server/devPrivacy.test.js](../server/devPrivacy.test.js) | Regression tests for dev privacy behavior using isolated fixtures. |
 | [server/domain/accounts.js](../server/domain/accounts.js) | Account validation, password verification and public account projections. |
@@ -149,6 +151,8 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [server/runtime.js](../server/runtime.js) | Opens the required MongoDB repository with no offline storage fallback. |
 | [server/security.test.js](../server/security.test.js) | Regression tests for security behavior using isolated fixtures. |
 | [server/security/admin-mfa.js](../server/security/admin-mfa.js) | Admin password challenges, encrypted TOTP enrollment, recovery codes and trusted reset. |
+| [server/security/email-proof.js](../server/security/email-proof.js) | Account-bound email proof with expiring hashed tokens and transactional single use. |
+| [server/security/passwords.js](../server/security/passwords.js) | Bounded asynchronous password derivation and privacy-preserving breached-password checks. |
 | [server/security/totp.js](../server/security/totp.js) | RFC-compatible TOTP verification and account-bound AES-GCM seed encryption. |
 | [server/services/email.js](../server/services/email.js) | Fenced shared email delivery with injected SMTP transport and bounded retries. |
 | [server/services/payments.js](../server/services/payments.js) | Provider-neutral checkout and capture coordination outside retryable database transactions. |
@@ -183,6 +187,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/components/CustomerAccount.jsx](../src/components/CustomerAccount.jsx) | React customer account view; authorization and authoritative state remain on the server. |
 | [src/components/DocumentReminders.jsx](../src/components/DocumentReminders.jsx) | React document reminders view; authorization and authoritative state remain on the server. |
 | [src/components/DocumentRenewals.jsx](../src/components/DocumentRenewals.jsx) | React document renewals view; authorization and authoritative state remain on the server. |
+| [src/components/EmailVerification.jsx](../src/components/EmailVerification.jsx) | Email proof UI keeps tokens in memory, requires the matching signed-in account and explicit confirmation. |
 | [src/components/FleetPortal.jsx](../src/components/FleetPortal.jsx) | React fleet portal view; authorization and authoritative state remain on the server. |
 | [src/components/HoldCountdown.jsx](../src/components/HoldCountdown.jsx) | Accessible countdown based on server hold duration; expiry never proves payment failure. |
 | [src/components/ListingPhotoUpload.jsx](../src/components/ListingPhotoUpload.jsx) | Owner photo upload with explicit public-sharing consent, separate from legal documents. |
@@ -229,6 +234,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [tests/booking.test.js](../tests/booking.test.js) | Regression tests for booking behavior using isolated fixtures. |
 | [tests/checkoutExperience.test.jsx](../tests/checkoutExperience.test.jsx) | Checkout usability tests cover held seats, server-clock countdown and read-only recovery. |
 | [tests/customerAccount.test.jsx](../tests/customerAccount.test.jsx) | Regression tests for customer account behavior using isolated fixtures. |
+| [tests/emailVerification.test.jsx](../tests/emailVerification.test.jsx) | Email verification requires explicit account confirmation and does not consume a link on page load. |
 | [tests/fleet.test.jsx](../tests/fleet.test.jsx) | Regression tests for fleet behavior using isolated fixtures. |
 | [tests/hostedCheckout.test.jsx](../tests/hostedCheckout.test.jsx) | Hosted checkout dismissal recovers a server-confirmed booking without a second order. |
 | [tests/i18n.test.jsx](../tests/i18n.test.jsx) | Regression tests for i18n behavior using isolated fixtures. |

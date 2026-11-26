@@ -6,3 +6,10 @@ export function consumeResetToken(location, history) {
   history.replaceState(null, '', location.pathname);
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
+
+export function consumeVerificationToken(location, history) {
+  if (location.pathname.replace(/\/$/, '') !== '/verify-email') return null;
+  const value = new URLSearchParams(location.hash.slice(1)).get('token');
+  history.replaceState(null, '', location.pathname);
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}

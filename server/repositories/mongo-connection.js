@@ -54,6 +54,10 @@ export async function connectMongo(env = process.env, { initialize = false } = {
 }
 export async function createMongoIndexes(db) {
   const specs = {
+    email_verifications: [
+      [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+      [{ userId: 1 }, { unique: true }],
+    ],
     payment_failures: [[{ at: 1 }, {}]],
     operational_alerts: [[{ status: 1, lastSeen: -1 }, {}]],
     operations_audit: [[{ incident: 1, at: -1 }, {}]],

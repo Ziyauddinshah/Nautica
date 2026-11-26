@@ -120,6 +120,29 @@ async function fixture() {
     b = new MongoRepository(second);
   a.mfa = new AdminMfa(a, { key: '0123456789abcdef'.repeat(4) });
   b.mfa = new AdminMfa(b, { key: '0123456789abcdef'.repeat(4) });
+  for (const repository of [a, b]) {
+    const original = repository.registerUser.bind(repository);
+    repository.unverifiedRegistration = original;
+    repository.registerUser = async (input) => {
+      const result = await original(input);
+      await repository
+        .c('users')
+        .updateOne(
+          { _id: result.user.id },
+          { $set: { verifiedEmail: result.user.email, emailVerifiedAt: new Date().toISOString() } },
+        );
+      return { ...result, user: { ...result.user, emailVerified: true } };
+    };
+  }
+  await a.c('users').updateOne(
+    { _id: 'fixture-owner' },
+    {
+      $set: {
+        verifiedEmail: 'fixture-owner@example.test',
+        emailVerifiedAt: new Date().toISOString(),
+      },
+    },
+  );
   resources.push(async () => {
     await a.db.dropDatabase();
     await a.close();
@@ -2627,4 +2650,189 @@ test('reviewed listing photos stay private until approval and journey shortcuts 
     { action: 'suspend', notes: 'Suspend pending operational review.', revision: boat.revision },
   );
   await assert.rejects(b.fleet.publicPhoto(boat.id), { status: 404 });
+});
+
+test('email proof is single use across replicas, bound to the signed-in account, and gates new bookings', async () => {
+  const { a, b } = await fixture(),
+    registered = await a.unverifiedRegistration(account()),
+    user = registered.user,
+    other = (await b.registerUser(account())).user;
+  assert.equal(user.emailVerified, false);
+  await assert.rejects(a.createBooking(booking(user), 'seats', user), { status: 403 });
+  const { gateway, count } = gatewayFixture();
+  await assert.rejects(
+    createPaymentService(new MongoPaymentStore(a), gateway).order(booking(user), user),
+    { status: 403 },
+  );
+  assert.equal(count(), 0);
+  const job = await a.emailProof.request(user.id, {
+      enabled: true,
+      siteOrigin: 'https://example.test',
+    }),
+    token = new URLSearchParams(new URL(job.link).hash.slice(1)).get('token');
+  const stored = await a.c('email_verifications').findOne({ userId: user.id });
+  assert.equal(stored.tokenHash, digest(token));
+  assert.ok(!JSON.stringify(stored).includes(token));
+  await assert.rejects(b.emailProof.verify(other.id, token), { status: 400 });
+  const results = await Promise.allSettled([
+    a.emailProof.verify(user.id, token),
+    b.emailProof.verify(user.id, token),
+  ]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal((await a.authenticateUser(registered.token)).emailVerified, true);
+  assert.ok((await b.createBooking(booking(user), 'seats', user)).id);
+});
+test('resending, expiry, changed email and password reset invalidate email proof without verifying by assumption', async () => {
+  const { a } = await fixture(),
+    user = (await a.unverifiedRegistration(account())).user,
+    settings = { enabled: true, siteOrigin: 'https://example.test' },
+    token = (job) => new URLSearchParams(new URL(job.link).hash.slice(1)).get('token');
+  const first = token(await a.emailProof.request(user.id, settings)),
+    second = token(await a.emailProof.request(user.id, settings));
+  await assert.rejects(a.emailProof.verify(user.id, first), { status: 400 });
+  assert.equal(await a.c('email_verifications').countDocuments({ userId: user.id }), 1);
+  await a
+    .c('email_verifications')
+    .updateOne({ userId: user.id }, { $set: { expiresAt: new Date(0) } });
+  await assert.rejects(a.emailProof.verify(user.id, second), { status: 400 });
+  const third = token(await a.emailProof.request(user.id, settings));
+  await a.c('users').updateOne({ _id: user.id }, { $set: { email: 'changed@example.test' } });
+  await assert.rejects(a.emailProof.verify(user.id, third), { status: 400 });
+  const fourth = token(await a.emailProof.request(user.id, settings));
+  await a.changeUserPassword(user.id, {
+    currentPassword: 'strong-test-passphrase',
+    newPassword: 'a different safe test phrase',
+  });
+  await assert.rejects(a.emailProof.verify(user.id, fourth), { status: 400 });
+  assert.equal(
+    (await a.loginUser({ email: 'changed@example.test', password: 'a different safe test phrase' }))
+      .user.emailVerified,
+    false,
+  );
+});
+test('booking emails wait for the owning account email proof and resume once without spending delivery retries', async () => {
+  const { a } = await fixture(),
+    user = (await a.registerUser(account())).user,
+    pass = await a.createBooking(booking(user), 'seats', user);
+  await a
+    .c('users')
+    .updateOne({ _id: user.id }, { $unset: { verifiedEmail: '', emailVerifiedAt: '' } });
+  const sent = [],
+    service = createSharedEmailService(new MongoOutboxStore(a), {
+      config: {
+        enabled: true,
+        configured: true,
+        user: 'sender@gmail.com',
+        adminTo: 'admin@example.test',
+        siteOrigin: 'https://example.test',
+      },
+      transport: {
+        sendMail: async (message) => {
+          sent.push(message);
+          return { accepted: [message.to.address] };
+        },
+      },
+    });
+  try {
+    await service.drain();
+    assert.equal(sent.length, 1);
+    const held = await a.c('outbox').findOne({ bookingId: pass.id, audience: 'customer' });
+    assert.equal(held.status, 'verification_required');
+    assert.equal(held.attempts, 0);
+    const job = await a.emailProof.request(user.id, {
+        enabled: true,
+        siteOrigin: 'https://example.test',
+      }),
+      token = new URLSearchParams(new URL(job.link).hash.slice(1)).get('token');
+    await a.emailProof.verify(user.id, token);
+    await service.drain();
+    assert.equal(sent.length, 2);
+    assert.equal(await a.c('outbox').countDocuments({ bookingId: pass.id, status: 'sent' }), 2);
+  } finally {
+    await service.stop();
+  }
+});
+
+test('email verification HTTP requires the account session, same-origin confirmation and never returns a token', async () => {
+  const { a } = await fixture();
+  a.registerUser = a.unverifiedRegistration;
+  const jobs = [],
+    email = {
+      status: () => ({
+        passwordResetEnabled: true,
+        siteOrigin: 'https://example.test',
+        configured: true,
+      }),
+      sendVerification: async (job) => jobs.push(job),
+      kick: () => {},
+    };
+  const server = createApp(null, { repository: a, emailService: email });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const call = (path, body, cookie, origin = true) =>
+    fetch(base + path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Nautica-Request': '1',
+        ...(origin ? { Origin: base } : {}),
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  try {
+    const response = await call('/api/user/register', account()),
+      cookie = response.headers.get('set-cookie').split(';')[0],
+      registered = await response.json();
+    assert.equal(response.status, 201);
+    assert.equal(registered.user.emailVerified, false);
+    assert.equal(registered.token, undefined);
+    assert.equal(jobs.length, 1);
+    const token = new URLSearchParams(new URL(jobs[0].link).hash.slice(1)).get('token');
+    assert.equal((await call('/api/user/email/verify', { token })).status, 401);
+    assert.equal((await call('/api/user/email/verify', { token }, cookie, false)).status, 403);
+    const verified = await call('/api/user/email/verify', { token }, cookie);
+    assert.equal(verified.status, 200);
+    assert.deepEqual(await verified.json(), { ok: true });
+    assert.equal((await call('/api/user/email/verify', { token }, cookie)).status, 400);
+    const session = await fetch(base + '/api/user/session', { headers: { Cookie: cookie } });
+    assert.equal((await session.json()).user.emailVerified, true);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+test('production-style password policy rejects unsafe new credentials without disabling existing-password login', async () => {
+  const { PasswordPolicy } = await import('../server/security/passwords.js'),
+    { a } = await fixture(),
+    registered = await a.registerUser(account()),
+    user = registered.user;
+  a.passwordPolicy = new PasswordPolicy({
+    required: true,
+    fetcher: async () => {
+      throw new Error('PRIVATE_UPSTREAM_ERROR');
+    },
+  });
+  await assert.rejects(a.unverifiedRegistration(account()), { status: 503 });
+  assert.equal(
+    (await a.loginUser({ email: user.email, password: 'strong-test-passphrase' })).user.id,
+    user.id,
+  );
+  await assert.rejects(
+    a.changeUserPassword(user.id, {
+      currentPassword: 'strong-test-passphrase',
+      newPassword: 'Password1234!',
+    }),
+    { status: 400 },
+  );
+  await assert.rejects(a.setAdmin('unsafe-admin', 'Password1234!'), { status: 400 });
+  const reset = await a.requestPasswordReset(
+    { email: user.email },
+    { enabled: true, siteOrigin: 'https://example.test' },
+  );
+  await assert.rejects(
+    a.resetUserPassword({ token: reset.token, newPassword: 'another safe password phrase' }),
+    { status: 503 },
+  );
+  assert.equal((await a.authenticateUser(registered.token)).id, user.id);
 });

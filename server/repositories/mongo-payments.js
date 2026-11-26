@@ -24,6 +24,7 @@ export class MongoPaymentStore {
       id = randomUUID(),
       repo = this.repo;
     return repo.transaction(async (session) => {
+      await repo.emailProof.require(user.id, session);
       const boat = await repo.fleet.bookable(payload.boatId, payload.date, session),
         prepared = validateBooking(payload, user, [boat]);
       if (await this.c('bookings').findOne({ requestKey: input.requestKey }, { session }))

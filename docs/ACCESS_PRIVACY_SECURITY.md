@@ -69,7 +69,7 @@ there is no universal two-admin approval system for every operation.
 Do not add analytics, tracking pixels, third-party scripts or exports without
 reviewing necessity, consent/notice, provider terms and the data leaving the app.
 The current repository does not implement automated retention/deletion policies,
-a customer data export/deletion portal, customer email verification or guaranteed
+a customer data export/deletion portal or guaranteed
 redaction of arbitrary logs. The operator must define lawful retention periods,
 request handling and backup expiry before commercial use. Preserve financial/
 legal obligations when honoring erasure requests; do not manually delete referenced
@@ -134,3 +134,6 @@ assess affected people and meet applicable notification duties. Follow
 needed to reconcile a payment. The application has no automatic breach-notification
 workflow or comprehensive tamper-proof audit service; arrange independent access
 logs and monitoring appropriate to the operation.
+
+Customer email proof, held notification delivery, password screening and hashing limits
+are detailed in [CREDENTIAL_SECURITY.md](../CREDENTIAL_SECURITY.md).
