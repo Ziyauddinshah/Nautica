@@ -1,4 +1,4 @@
-/** @file Razorpay gateway adapter: signatures, authoritative evidence and sanitized provider health. */
+/** @file Browser hosted checkout; capture evidence and all merchant secrets remain on the server. */
 import { request, ApiError } from './api.js';
 let loading;
 function loadCheckout() {
@@ -17,15 +17,30 @@ function loadCheckout() {
     });
   return loading;
 }
-export async function payRazorpay(payload, language) {
-  await loadCheckout();
-  const order = await request('/api/payments/order', { method: 'POST', body: payload });
+export async function payRazorpay(payload, language, onOrder = () => {}) {
+  try {
+    await loadCheckout();
+  } catch (error) {
+    error.checkoutNotStarted = true;
+    throw error;
+  }
+  let order;
+  try {
+    order = await request('/api/payments/order', { method: 'POST', body: payload });
+  } catch (error) {
+    // Only an explicit pre-checkout seat conflict is safe to send back to the map.
+    // Network/server failures may have created an attempt and must enter recovery.
+    error.seatConflict = error.status === 409 && Array.isArray(error.data?.bookedSeats);
+    throw error;
+  }
+  onOrder(order);
   return new Promise((resolve, reject) => {
     const checkout = new window.Razorpay({
       key: order.keyId,
       amount: order.amount,
       currency: 'INR',
       order_id: order.orderId,
+      timeout: Math.max(1, Math.floor((order.expires - (order.serverNow ?? Date.now())) / 1000)),
       name: 'Nautica',
       description: 'Boat seat reservation',
       prefill: { name: payload.name, email: payload.email, contact: payload.phone },

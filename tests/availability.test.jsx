@@ -56,7 +56,7 @@ test('server availability failure blocks selection and checkout instead of assum
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats on Ganges Dawn' }));
   await screen.findByRole('alert');
   expect(screen.getByRole('button', { name: 'Choose seats for me' }).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
   expect(screen.getByRole('alert').textContent).toMatch(/availability is not verified/);
   expect(screen.queryByLabelText('Lead guest name')).toBeNull();
 });
@@ -86,14 +86,15 @@ test('a booking conflict returns to the map, refreshes booked seats and never co
     expect(screen.getByRole('button', { name: 'Choose seats for me' }).disabled).toBe(false),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
-  fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
   for (const [label, value] of [
     ['Lead guest name', 'Guest'],
     ['Email address', 'guest@example.com'],
     ['Phone number', '+919876543210'],
-    ['UPI ID', 'guest@okaxis'],
   ])
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.click(screen.getByRole('button', { name: /Continue to payment/ }));
+  fireEvent.change(screen.getByLabelText('UPI ID'), { target: { value: 'guest@okaxis' } });
   fireEvent.click(screen.getByRole('button', { name: /Verify & pay/ }));
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2050));

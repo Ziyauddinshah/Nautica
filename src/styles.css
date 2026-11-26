@@ -2435,3 +2435,131 @@ footer small {
 .aftercare-panel small {
   display: block;
 }
+
+/* Booking navigation and actions remain readable on small screens. */
+.booking-progress {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.booking-progress li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.booking-progress li > span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.booking-progress [aria-current='step'] {
+  color: var(--teal);
+  font-weight: 700;
+}
+.booking-progress [aria-current='step'] > span {
+  background: var(--teal);
+  color: white;
+}
+.checkout-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: white;
+  border-top: 1px solid var(--line);
+  padding: 14px 0 max(14px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 -6px 12px #ffffffdd;
+}
+.checkout-actions > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.seat-legend {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.seat-legend i {
+  display: inline-grid;
+  place-items: center;
+  font-style: normal;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  font-weight: 700;
+}
+.seat-legend i.held,
+.seat-button.is-held {
+  background: repeating-linear-gradient(135deg, #fff5d6, #fff5d6 6px, #f6e5ba 6px, #f6e5ba 12px);
+  border-color: #80600b;
+  color: #624800;
+  opacity: 1;
+}
+.seat-button small {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.1;
+}
+.hold-countdown,
+.payment-recovery {
+  background: var(--paper);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 16px 0;
+}
+.hold-countdown [role='timer'] {
+  font-size: 1.375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.hold-countdown p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.hold-warning {
+  border-color: #80600b;
+  background: #fff7df;
+  color: #624800;
+}
+@media (max-width: 600px) {
+  dialog {
+    width: calc(100% - 12px);
+    max-height: 96dvh;
+  }
+  .seat-button {
+    min-height: 48px;
+  }
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .checkout-actions .primary {
+    min-height: 48px;
+  }
+  .booking-progress {
+    gap: 4px;
+  }
+  .booking-progress li {
+    font-size: 0.8rem;
+  }
+}
+@media print {
+  .booking-progress,
+  .checkout-actions,
+  .hold-countdown,
+  .payment-recovery {
+    display: none;
+  }
+}

@@ -9,6 +9,7 @@ export default function SeatMap({
   onChange,
   error,
   booked = [],
+  held = [],
   loading = false,
   unavailable = false,
 }) {
@@ -23,7 +24,7 @@ export default function SeatMap({
     (_, index) => seats.filter((seat) => seat.row === index),
   );
   function toggle(id) {
-    if (loading || unavailable || booked.includes(id)) return;
+    if (loading || unavailable || booked.includes(id) || held.includes(id)) return;
     if (selected.includes(id)) onChange(selected.filter((seat) => seat !== id));
     else if (selected.length < guests) onChange([...selected, id]);
     else {
@@ -49,13 +50,25 @@ export default function SeatMap({
       </div>
       <div className="seat-legend">
         <span>
-          <i /> {t('Available')}
+          <i aria-hidden="true">○</i> {t('Available')}
         </span>
         <span>
-          <i className="selected" /> {t('Your seats')}
+          <i className="selected" aria-hidden="true">
+            ✓
+          </i>{' '}
+          {t('Your seats')}
         </span>
         <span>
-          <i className="booked" /> {t('Booked')}
+          <i className="booked" aria-hidden="true">
+            ×
+          </i>{' '}
+          {t('Booked')}
+        </span>
+        <span>
+          <i className="held" aria-hidden="true">
+            ◷
+          </i>{' '}
+          {t('Temporarily held')}
         </span>
       </div>
       <div
@@ -108,22 +121,39 @@ export default function SeatMap({
                 <button
                   key={seat.id}
                   type="button"
-                  className={`seat-button ${booked.includes(seat.id) ? 'is-booked' : selected.includes(seat.id) ? 'is-selected' : ''}`}
+                  className={`seat-button ${booked.includes(seat.id) ? 'is-booked' : held.includes(seat.id) ? 'is-held' : selected.includes(seat.id) ? 'is-selected' : ''}`}
                   style={{
                     gridColumn:
                       columns === 4 && seat.column >= 2 ? seat.column + 2 : seat.column + 1,
                   }}
-                  disabled={loading || unavailable || booked.includes(seat.id)}
+                  disabled={
+                    loading || unavailable || booked.includes(seat.id) || held.includes(seat.id)
+                  }
                   aria-pressed={selected.includes(seat.id)}
                   aria-label={t('Seat {{v0}}, {{v1}}, {{v2}}{{v3}}', {
                     v0: seat.id,
                     v1: t(seat.zone.toLowerCase()),
                     v2: t(seat.side.toLowerCase()),
-                    v3: booked.includes(seat.id) ? t(', booked') : '',
+                    v3: booked.includes(seat.id)
+                      ? t(', booked')
+                      : held.includes(seat.id)
+                        ? t(', temporarily held')
+                        : selected.includes(seat.id)
+                          ? t(', selected')
+                          : t(', available'),
                   })}
                   onClick={() => toggle(seat.id)}
                 >
                   {seat.id}
+                  <small aria-hidden="true">
+                    {booked.includes(seat.id)
+                      ? '×'
+                      : held.includes(seat.id)
+                        ? '◷'
+                        : selected.includes(seat.id)
+                          ? '✓'
+                          : '○'}
+                  </small>
                 </button>
               ))}
             </div>
@@ -148,11 +178,16 @@ export default function SeatMap({
       <button
         type="button"
         className="outline wide"
-        disabled={loading || unavailable || seats.length - booked.length < guests}
+        disabled={
+          loading ||
+          unavailable ||
+          seats.filter((seat) => !booked.includes(seat.id) && !held.includes(seat.id)).length <
+            guests
+        }
         onClick={() => {
           onChange(
             seats
-              .filter((seat) => !booked.includes(seat.id))
+              .filter((seat) => !booked.includes(seat.id) && !held.includes(seat.id))
               .slice(0, guests)
               .map((seat) => seat.id),
           );

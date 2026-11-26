@@ -1,5 +1,50 @@
 /** @file Feature message/condition catalog; no private provider settings are exposed. */
 export const hi = {
+  'Temporarily held': 'अस्थायी रूप से रोकी गई',
+  ', temporarily held': ', अस्थायी रूप से रोकी गई',
+  ', selected': ', चयनित',
+  ', available': ', उपलब्ध',
+  'Booking progress': 'बुकिंग की प्रगति',
+  Trip: 'यात्रा',
+  Seats: 'सीटें',
+  'Passenger details': 'यात्री विवरण',
+  Payment: 'भुगतान',
+  'Change trip': 'यात्रा बदलें',
+  'Continue to passenger details': 'यात्री विवरण पर जाएँ',
+  'Continue to payment': 'भुगतान पर जाएँ',
+  'Back to passenger details': 'यात्री विवरण पर वापस जाएँ',
+  '03 / PASSENGER DETAILS': '03 / यात्री विवरण',
+  '04 / PAYMENT': '04 / भुगतान',
+  'Who is travelling?': 'कौन यात्रा कर रहा है?',
+  'Review and pay': 'जाँचें और भुगतान करें',
+  'Seats are reserved only when checkout starts.':
+    'भुगतान प्रक्रिया शुरू होने पर ही सीटें अस्थायी रूप से आरक्षित होती हैं।',
+  'Seat hold': 'सीट आरक्षण की समय सीमा',
+  'Seat hold expired': 'सीट रोकने की समय सीमा समाप्त',
+  'Seat hold remaining': 'सीट रोकने का शेष समय',
+  'Your hold has ended. Payment may still be processing. Check its status before paying again.':
+    'सीट रोकने की समय सीमा समाप्त हो गई है। भुगतान जारी हो सकता है। दोबारा भुगतान करने से पहले स्थिति जाँचें।',
+  'Less than two minutes remain. Finish checkout soon.':
+    'दो मिनट से कम समय बचा है। जल्द भुगतान प्रक्रिया पूरी करें।',
+  'Your selected seats are temporarily held during checkout.':
+    'भुगतान प्रक्रिया के दौरान आपकी चुनी हुई सीटें अस्थायी रूप से रोकी गई हैं।',
+  'Checking your payment': 'आपके भुगतान की जाँच हो रही है',
+  'A closed checkout or lost connection does not mean payment failed. Do not pay again until the status is clear.':
+    'भुगतान विंडो बंद होना या कनेक्शन टूटना भुगतान विफल होने का प्रमाण नहीं है। स्थिति स्पष्ट होने तक दोबारा भुगतान न करें।',
+  'Checking the server for your booking…': 'सर्वर पर आपकी बुकिंग जाँची जा रही है…',
+  'Checking payment…': 'भुगतान जाँचा जा रहा है…',
+  'Check payment status': 'भुगतान की स्थिति जाँचें',
+  'View booking and payment history': 'बुकिंग और भुगतान का इतिहास देखें',
+  'Payment confirmation is still pending.': 'भुगतान की पुष्टि अभी बाकी है।',
+  'Your payment needs refund review. Check your account or contact support.':
+    'आपके भुगतान की धनवापसी समीक्षा आवश्यक है। अपना खाता देखें या सहायता से संपर्क करें।',
+  'No payment attempt is visible yet. Wait and check again before starting another payment.':
+    'अभी भुगतान प्रयास दिखाई नहीं दे रहा है। नया भुगतान शुरू करने से पहले रुकें और फिर जाँचें।',
+  'This booking was cancelled. Review its refund status in your account.':
+    'यह बुकिंग रद्द हो गई थी। अपने खाते में धनवापसी की स्थिति देखें।',
+  'Unable to check payment status. Reconnect and try checking again; do not pay again.':
+    'भुगतान की स्थिति नहीं जाँची जा सकी। कनेक्शन बहाल करके फिर जाँचें; दोबारा भुगतान न करें।',
+
   Severity: 'गंभीरता',
   'Retry failed alert delivery': 'विफल संचालन सूचनाएँ फिर भेजें',
   'Review delivery status before retrying. Accepted or uncertain SMS messages are not resent.':

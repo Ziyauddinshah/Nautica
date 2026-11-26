@@ -12,11 +12,12 @@ async function startPayment() {
     expect(screen.getByRole('button', { name: 'Choose seats for me' }).disabled).toBe(false),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
-  fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
   fireEvent.change(screen.getByLabelText('Email address'), {
     target: { value: 'guest@example.com' },
   });
   fireEvent.change(screen.getByLabelText('Phone number'), { target: { value: '+919876543210' } });
+  fireEvent.click(screen.getByRole('button', { name: /Continue to payment/ }));
 }
 async function finishPayment() {
   await act(async () => {
@@ -35,7 +36,7 @@ describe('React booking flow', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /Seat 01,/ }).disabled).toBe(false),
     );
-    fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
     expect(screen.getByRole('alert').textContent).toMatch(/choose 2 seats/);
     const first = screen.getByRole('button', { name: /Seat 01,/ });
     fireEvent.click(first);
@@ -48,10 +49,10 @@ describe('React booking flow', () => {
     expect(first.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: /Seat 06,/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Switch currency' }));
-    expect(screen.getByRole('button', { name: /Proceed to payment/ }).textContent).toContain(
-      '$15.18',
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+    expect(
+      screen.getByRole('button', { name: /Continue to passenger details/ }).textContent,
+    ).toContain('$15.18');
+    fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
     expect(screen.getByText(/Seats: 04, 06/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Back to your extras/ }));
     expect(screen.getByRole('button', { name: /Seat 06,/ }).getAttribute('aria-pressed')).toBe(

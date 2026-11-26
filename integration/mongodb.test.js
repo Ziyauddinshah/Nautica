@@ -2461,3 +2461,60 @@ test('small synthetic launch pilot completes five paid journeys across replicas 
     await restoredDb.dropDatabase();
   }
 });
+
+test('checkout UX exposes held versus confirmed seats and ownership-scoped recovery without provider calls', async () => {
+  const { a, b } = await fixture(),
+    user = (await a.registerUser(account())).user,
+    stranger = (await b.registerUser(account())).user,
+    { gateway, count } = gatewayFixture();
+  const payments = createPaymentService(new MongoPaymentStore(a), gateway),
+    input = booking(user),
+    order = await payments.order(input, user);
+  assert.ok(order.serverNow <= order.expires);
+  const available = await b.availability(input);
+  assert.deepEqual(available.heldSeats, ['01']);
+  assert.deepEqual(available.confirmedSeats, []);
+  assert.deepEqual(available.bookedSeats, ['01']);
+  const server = createApp(null, { repository: b });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const ownerSession = await a.loginUser({ email: user.email, password: 'strong-test-passphrase' }),
+    otherSession = await b.loginUser({ email: stranger.email, password: 'strong-test-passphrase' });
+  const lookup = async (token) => {
+    const response = await fetch(base + '/api/payments/status?requestKey=' + input.requestKey, {
+      headers: token ? { Cookie: 'nautica_user=' + token } : {},
+    });
+    return { response, body: await response.json() };
+  };
+  try {
+    assert.equal((await lookup()).response.status, 401);
+    assert.equal((await lookup(otherSession.token)).body.status, 'not_found');
+    const pending = await lookup(ownerSession.token);
+    assert.equal(pending.body.status, 'created');
+    assert.equal(pending.response.headers.get('cache-control'), 'no-store');
+    assert.equal(pending.body.expires, order.expires);
+    assert.equal(pending.body.orderId, undefined);
+    assert.equal(pending.body.userId, undefined);
+    await payments.verify(
+      {
+        attemptId: order.attemptId,
+        orderId: order.orderId,
+        paymentId: 'pay_1',
+        signature: sign(order.orderId + '|pay_1'),
+      },
+      user,
+    );
+    const recovered = await lookup(ownerSession.token);
+    assert.equal(recovered.body.status, 'confirmed');
+    assert.ok(recovered.body.booking.id);
+    assert.equal(recovered.body.booking.userId, undefined);
+    assert.equal(count(), 1);
+    const after = await b.availability(input);
+    assert.deepEqual(after.heldSeats, []);
+    assert.deepEqual(after.confirmedSeats, ['01']);
+    assert.equal(await a.c('payments').countDocuments({}), 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

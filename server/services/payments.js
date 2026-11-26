@@ -10,6 +10,7 @@ export function createPaymentService(store, gateway, { mode = 'seats', refunds =
     amount: row.amount,
     currency: 'INR',
     expires: row.expires,
+    serverNow: Date.now(),
   });
   async function order(input, user) {
     if (!gateway.enabled) throw new ApiError(503, 'Online booking is currently unavailable.');

@@ -70,6 +70,7 @@ export default function PaymentForm({
   accountEmail,
   cancellationPolicy = { cutoffHours: 24 },
   paymentMode = 'demo',
+  phase = 'all',
 }) {
   const { t, locale } = useI18n();
   const tab = draft.tab;
@@ -86,7 +87,10 @@ export default function PaymentForm({
   };
   function submit(event) {
     event.preventDefault();
-    const problem = validatePayment(draft, paymentMode === 'razorpay' ? 'hosted' : tab);
+    const problem = validatePayment(
+      draft,
+      phase === 'details' || paymentMode === 'razorpay' ? 'hosted' : tab,
+    );
     if (problem) {
       setInvalid(problem);
       formRef.current.elements.namedItem(problem[0])?.focus();
@@ -136,9 +140,9 @@ export default function PaymentForm({
           { hours: cancellationPolicy.cutoffHours },
         )}
       </p>
-      <p className="steps">{t('02 / CHECKOUT')}</p>
+      <p className="steps">{t(phase === 'details' ? '03 / PASSENGER DETAILS' : '04 / PAYMENT')}</p>
       <h2 id="flow-title" className="dialog-title">
-        {t('One step closer.')}
+        {t(phase === 'details' ? 'Who is travelling?' : 'Review and pay')}
       </h2>
       <p className="subtitle">
         {t(
@@ -186,7 +190,7 @@ export default function PaymentForm({
             />
           </label>
         </div>
-        {paymentMode !== 'razorpay' && (
+        {phase !== 'details' && paymentMode !== 'razorpay' && (
           <>
             <div className="tabs" role="tablist" aria-label={t('Payment method')}>
               {[
@@ -416,18 +420,26 @@ export default function PaymentForm({
             {t(invalid?.[1] || error)}
           </p>
         )}
-        <button className="primary wide" type="submit">
-          {paymentMode === 'razorpay'
-            ? t('Pay with Razorpay')
-            : tab === 'upi'
-              ? t('Verify & pay')
-              : t('Confirm demo payment')}{' '}
-          · {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))}
-        </button>
+        <div className="checkout-actions">
+          <span>
+            {t('Grand total')}{' '}
+            <strong>{t(N.money(N.amounts(boat, trip.extras).total, currency, locale))}</strong>
+          </span>
+          <button className="primary wide" type="submit">
+            {phase === 'details'
+              ? t('Continue to payment')
+              : paymentMode === 'razorpay'
+                ? t('Pay with Razorpay')
+                : tab === 'upi'
+                  ? t('Verify & pay')
+                  : t('Confirm demo payment')}{' '}
+            · {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))}
+          </button>
+        </div>
         <button className="back-link" type="button" onClick={onBack}>
-          {t('\u2190 Back to your extras')}
+          {t(phase === 'payment' ? 'Back to passenger details' : '\u2190 Back to your extras')}
         </button>
-        {paymentMode !== 'razorpay' && (
+        {phase !== 'details' && paymentMode !== 'razorpay' && (
           <p className="demo-note">
             {t('Simulation only. Card details and UPI IDs are never saved.')}
             <br />

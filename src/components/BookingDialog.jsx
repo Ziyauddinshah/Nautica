@@ -7,6 +7,8 @@ import { TripSummary, PriceBreakdown } from './TripSummary.jsx';
 import PaymentForm, { emptyDraft } from './PaymentForm.jsx';
 import { payRazorpay } from '../lib/razorpay.js';
 import { request, getAvailability, bookSeats } from '../lib/api.js';
+import HoldCountdown from './HoldCountdown.jsx';
+import PaymentRecovery from './PaymentRecovery.jsx';
 import BoardingPass from './BoardingPass.jsx';
 export default function BookingDialog({
   flow,
@@ -36,6 +38,7 @@ export default function BookingDialog({
   const dialogRef = useRef(null);
   const timerRef = useRef(null);
   const payLock = useRef(false);
+  const resolved = useRef(false);
   const [stage, setStage] = useState(flow.kind === 'booking' ? 'review' : flow.kind);
   const [trip, setTrip] = useState(flow.trip || null);
   const [activePass, setActivePass] = useState(flow.booking || null);
@@ -51,6 +54,8 @@ export default function BookingDialog({
   }));
   const [error, setError] = useState('');
   const [booked, setBooked] = useState([]);
+  const [held, setHeld] = useState([]);
+  const [hold, setHold] = useState(null);
   const [availabilityState, setAvailabilityState] = useState('loading');
   const [refreshKey, setRefreshKey] = useState(0);
   const requestKey = useRef(crypto.randomUUID());
@@ -82,6 +87,7 @@ export default function BookingDialog({
         const result = await getAvailability(trip, controller.signal);
         if (!current) return;
         setBooked(result.bookedSeats);
+        setHeld(result.heldSeats || []);
         setAvailabilityState('ready');
         setTrip((previous) => {
           const seats = previous.seats.filter((seat) => !result.bookedSeats.includes(seat));
@@ -110,8 +116,15 @@ export default function BookingDialog({
       clearInterval(timer);
     };
   }, [trip?.boatId, trip?.date, trip?.slot, refreshKey, activePass?.id]);
+  useEffect(() => {
+    if (!processing || paymentConfig?.mode !== 'razorpay') return;
+    const timer = setTimeout(() => {
+      if (alive.current) setStage('recovery');
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [processing, paymentConfig?.mode]);
   function close() {
-    if (!payLock.current) {
+    if (!payLock.current || stage === 'recovery') {
       dialogRef.current.close();
       onClose();
     }
@@ -131,7 +144,7 @@ export default function BookingDialog({
       return;
     }
     setError('');
-    setStage('payment');
+    setStage('details');
   }
   function pay(customer) {
     if (payLock.current) return;
@@ -166,25 +179,33 @@ export default function BookingDialog({
       try {
         const booking =
           paymentConfig?.mode === 'razorpay'
-            ? await payRazorpay(payload, locale)
+            ? await payRazorpay(payload, locale, (order) => {
+                if (alive.current)
+                  setHold({ expires: order.expires, serverNow: order.serverNow ?? Date.now() });
+              })
             : await bookSeats(payload);
-        if (!alive.current) return;
+        if (!alive.current || resolved.current) return;
         try {
           onBook(booking);
         } catch {
           /* The server booking remains valid even if the offline cache is full. */
         }
+        resolved.current = true;
         setActivePass(booking);
         setDraft(emptyDraft());
         setStage('confirmed');
       } catch (error) {
-        if (!alive.current) return;
+        if (!alive.current || resolved.current) return;
         setError(error.message);
         if (error.status === 401) {
           onAuthExpired?.();
           return;
         }
-        if (error.status === 409) {
+        if (error.checkoutNotStarted) {
+          setStage('payment');
+        } else if (paymentConfig?.mode === 'razorpay' && !error.seatConflict) {
+          setStage('recovery');
+        } else if (error.status === 409) {
           setBooked(error.data.bookedSeats || []);
           setTrip((previous) => ({
             ...previous,
@@ -198,6 +219,17 @@ export default function BookingDialog({
         payLock.current = false;
       }
     }, 2000);
+  }
+  function confirmed(booking) {
+    if (resolved.current) return;
+    resolved.current = true;
+    payLock.current = false;
+    try {
+      onBook(booking);
+    } catch {}
+    setActivePass(booking);
+    setDraft(emptyDraft());
+    setStage('confirmed');
   }
   return (
     <dialog
@@ -230,6 +262,32 @@ export default function BookingDialog({
         </button>
       </div>
       <div id="flow-body">
+        {trip && !activePass && (
+          <>
+            <ol className="booking-progress" aria-label={t('Booking progress')}>
+              {['Trip', 'Seats', 'Passenger details', 'Payment'].map((label, index) => (
+                <li
+                  key={label}
+                  aria-current={
+                    index === (stage === 'review' ? 1 : stage === 'details' ? 2 : 3)
+                      ? 'step'
+                      : undefined
+                  }
+                >
+                  <span aria-hidden="true">{index + 1}</span>
+                  {t(label)}
+                </li>
+              ))}
+            </ol>
+            {stage === 'review' && (
+              <button className="back-link" onClick={close}>
+                {t('Change trip')}
+              </button>
+            )}
+            {paymentConfig?.mode === 'razorpay' && <HoldCountdown hold={hold} />}
+          </>
+        )}
+
         {stage === 'review' && (
           <>
             <p className="steps">{t('01 / YOUR VOYAGE')}</p>
@@ -243,7 +301,8 @@ export default function BookingDialog({
               guests={trip.guests}
               selected={trip.seats}
               error={error}
-              booked={booked}
+              booked={booked.filter((seat) => !held.includes(seat))}
+              held={held}
               loading={availabilityState === 'loading'}
               unavailable={availabilityState === 'error'}
               onChange={(seats) => {
@@ -293,10 +352,16 @@ export default function BookingDialog({
               ))}
             </div>
             <PriceBreakdown boat={boat} trip={trip} currency={currency} />
-            <button className="primary wide" onClick={proceed}>
-              {t('Proceed to payment \xB7')}{' '}
-              {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))} →
-            </button>
+            <div className="checkout-actions">
+              <span>
+                {t('Grand total')}{' '}
+                <strong>{t(N.money(N.amounts(boat, trip.extras).total, currency, locale))}</strong>
+              </span>
+              <button className="primary wide" onClick={proceed}>
+                {t('Continue to passenger details')}{' '}
+                {t(N.money(N.amounts(boat, trip.extras).total, currency, locale))} →
+              </button>
+            </div>
             <p className="demo-note">
               {t(
                 'Group trip fare. Your captain is included. Only your selected seats are reserved.',
@@ -304,7 +369,7 @@ export default function BookingDialog({
             </p>
           </>
         )}
-        {stage === 'payment' && (
+        {(stage === 'payment' || stage === 'details') && (
           <PaymentForm
             cancellationPolicy={paymentConfig?.cancellationPolicy}
             paymentMode={paymentConfig?.mode}
@@ -314,12 +379,28 @@ export default function BookingDialog({
             draft={draft}
             onDraft={setDraft}
             accountEmail={user?.email}
-            onPay={pay}
+            phase={stage}
+            onPay={
+              stage === 'details'
+                ? () => {
+                    setError('');
+                    setStage('payment');
+                  }
+                : pay
+            }
             onBack={() => {
               setError('');
-              setStage('review');
+              setStage(stage === 'payment' ? 'details' : 'review');
             }}
             error={error}
+          />
+        )}
+        {stage === 'recovery' && (
+          <PaymentRecovery
+            requestKey={requestKey.current}
+            onConfirmed={confirmed}
+            onHold={setHold}
+            onAuthExpired={onAuthExpired}
           />
         )}
         {processing && (

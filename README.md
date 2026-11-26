@@ -222,3 +222,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md), the
 [file-by-file reference](docs/FILE_REFERENCE.md). Review
 [access, privacy and security](docs/ACCESS_PRIVACY_SECURITY.md) before granting
 third-party access; see [SECURITY.md](SECURITY.md) for private vulnerability reports.
+
+Booking usability: [CHECKOUT_EXPERIENCE.md](CHECKOUT_EXPERIENCE.md) explains the
+four-step mobile flow, seat-state symbols, real hold countdown and safe payment
+recovery.

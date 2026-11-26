@@ -91,27 +91,33 @@ export class MongoRepository {
     const keys = [
       {
         id: category + ':ip:' + digest(ip || ''),
-        limit: ['owner-otp-send', 'owner-identity'].includes(category)
-          ? 10
-          : category === 'forgot'
-            ? 5
-            : category === 'register'
+        limit:
+          category === 'payment-status'
+            ? 60
+            : ['owner-otp-send', 'owner-identity'].includes(category)
               ? 10
-              : category === 'admin-login'
+              : category === 'forgot'
                 ? 5
-                : 15,
+                : category === 'register'
+                  ? 10
+                  : category === 'admin-login'
+                    ? 5
+                    : 15,
       },
     ];
     if (identifier)
       keys.push({
         id: category + ':account:' + digest(identifier),
-        limit: ['owner-otp-send', 'owner-identity'].includes(category)
-          ? 3
-          : category === 'forgot'
-            ? 3
-            : category === 'register'
-              ? 10
-              : 15,
+        limit:
+          category === 'payment-status'
+            ? 60
+            : ['owner-otp-send', 'owner-identity'].includes(category)
+              ? 3
+              : category === 'forgot'
+                ? 3
+                : category === 'register'
+                  ? 10
+                  : 15,
       });
     for (const { id, limit } of keys) {
       const fresh = { $lte: [{ $ifNull: ['$expiresAt', new Date(0)] }, '$$NOW'] };
@@ -375,6 +381,8 @@ export class MongoRepository {
       date: input.date,
       slot: input.slot,
       bookedSeats,
+      heldSeats: bookedSeats.filter((seat) => !trip.occupied[seat].bookingId),
+      confirmedSeats: bookedSeats.filter((seat) => Boolean(trip.occupied[seat].bookingId)),
       remaining: boat.capacity - bookedSeats.length,
     };
   }

@@ -17,6 +17,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [AFTERCARE.md](../AFTERCARE.md) | Cancellation, refunds and document-expiry reminders. |
 | [ARCHITECTURE.md](../ARCHITECTURE.md) | Architecture and extension points. |
 | [BACKUP_RESTORE_PILOT.md](../BACKUP_RESTORE_PILOT.md) | Backup restoration and small launch pilot. |
+| [CHECKOUT_EXPERIENCE.md](../CHECKOUT_EXPERIENCE.md) | Seat selection, mobile checkout and payment recovery. |
 | [COMMERCIAL_LAUNCH.md](../COMMERCIAL_LAUNCH.md) | Multi-server commercial launch. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Working on Nautica. |
 | [Dockerfile](../Dockerfile) | Production application image build; no production secrets belong in image layers. |
@@ -179,9 +180,11 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/components/DocumentReminders.jsx](../src/components/DocumentReminders.jsx) | React document reminders view; authorization and authoritative state remain on the server. |
 | [src/components/DocumentRenewals.jsx](../src/components/DocumentRenewals.jsx) | React document renewals view; authorization and authoritative state remain on the server. |
 | [src/components/FleetPortal.jsx](../src/components/FleetPortal.jsx) | React fleet portal view; authorization and authoritative state remain on the server. |
+| [src/components/HoldCountdown.jsx](../src/components/HoldCountdown.jsx) | Accessible countdown based on server hold duration; expiry never proves payment failure. |
 | [src/components/OperationsDashboard.jsx](../src/components/OperationsDashboard.jsx) | React operations dashboard view; authorization and authoritative state remain on the server. |
 | [src/components/OwnerVerification.jsx](../src/components/OwnerVerification.jsx) | React owner verification view; authorization and authoritative state remain on the server. |
 | [src/components/PaymentForm.jsx](../src/components/PaymentForm.jsx) | React payment form view; authorization and authoritative state remain on the server. |
+| [src/components/PaymentRecovery.jsx](../src/components/PaymentRecovery.jsx) | Read-only payment recovery: checks the owned attempt without creating another charge. |
 | [src/components/QrCode.jsx](../src/components/QrCode.jsx) | React qr code view; authorization and authoritative state remain on the server. |
 | [src/components/RefundAdministration.jsx](../src/components/RefundAdministration.jsx) | React refund administration view; authorization and authoritative state remain on the server. |
 | [src/components/ResetPassword.jsx](../src/components/ResetPassword.jsx) | React reset password view; authorization and authoritative state remain on the server. |
@@ -198,7 +201,7 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [src/lib/api.js](../src/lib/api.js) | Same-origin browser API client with safe response handling and language selection. |
 | [src/lib/passExport.js](../src/lib/passExport.js) | Browser helper for pass export; keep private server settings out of this module. |
 | [src/lib/qr.js](../src/lib/qr.js) | Browser helper for qr; keep private server settings out of this module. |
-| [src/lib/razorpay.js](../src/lib/razorpay.js) | Razorpay gateway adapter: signatures, authoritative evidence and sanitized provider health. |
+| [src/lib/razorpay.js](../src/lib/razorpay.js) | Browser hosted checkout; capture evidence and all merchant secrets remain on the server. |
 | [src/lib/refundStatus.js](../src/lib/refundStatus.js) | Browser helper for refund status; keep private server settings out of this module. |
 | [src/lib/resetLink.js](../src/lib/resetLink.js) | Browser helper for reset link; keep private server settings out of this module. |
 | [src/lib/smsStatus.js](../src/lib/smsStatus.js) | Browser helper for sms status; keep private server settings out of this module. |
@@ -217,8 +220,10 @@ Purpose comments describe modules; feature guides explain business rules and sec
 | [tests/apiMock.js](../tests/apiMock.js) | Browser test apiMock support using synthetic data and fake API responses. |
 | [tests/availability.test.jsx](../tests/availability.test.jsx) | Regression tests for availability behavior using isolated fixtures. |
 | [tests/booking.test.js](../tests/booking.test.js) | Regression tests for booking behavior using isolated fixtures. |
+| [tests/checkoutExperience.test.jsx](../tests/checkoutExperience.test.jsx) | Checkout usability tests cover held seats, server-clock countdown and read-only recovery. |
 | [tests/customerAccount.test.jsx](../tests/customerAccount.test.jsx) | Regression tests for customer account behavior using isolated fixtures. |
 | [tests/fleet.test.jsx](../tests/fleet.test.jsx) | Regression tests for fleet behavior using isolated fixtures. |
+| [tests/hostedCheckout.test.jsx](../tests/hostedCheckout.test.jsx) | Hosted checkout dismissal recovers a server-confirmed booking without a second order. |
 | [tests/i18n.test.jsx](../tests/i18n.test.jsx) | Regression tests for i18n behavior using isolated fixtures. |
 | [tests/journeyHistory.test.jsx](../tests/journeyHistory.test.jsx) | Regression tests for journey history behavior using isolated fixtures. |
 | [tests/ownerVerification.test.jsx](../tests/ownerVerification.test.jsx) | Regression tests for owner verification behavior using isolated fixtures. |

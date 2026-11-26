@@ -74,3 +74,16 @@ not proof of inbox/handset delivery.
 When extending an endpoint, update its allowlisted response, shared validation,
 authorization/negative tests, both UI languages and feature documentation. Do not
 return raw database rows or provider payloads, even to admins.
+
+## Checkout recovery and seat states
+
+`GET /api/payments/status?requestKey=<UUID>` is customer-authenticated and
+ownership-scoped. It returns safe stored status, `serverNow`, optional hold
+`expires`, and a projected `booking` only when that customer owns the associated
+record. It never initiates provider calls or a new charge. Unknown/unowned keys
+have the same `not_found` response; absence alone is not evidence that no money
+moved. See [checkout recovery](../CHECKOUT_EXPERIENCE.md).
+
+Availability additionally distinguishes `heldSeats` from `confirmedSeats`, while
+`bookedSeats` remains their union for existing clients. No per-seat customer or
+attempt identifiers are public.

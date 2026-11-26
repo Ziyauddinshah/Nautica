@@ -201,6 +201,44 @@ export function createApp(
           await repo.health();
           return send(200, { ok: true });
         }
+        // Read-only recovery lookup: ownership and explicit projections apply even to pending attempts.
+        if (req.method === 'GET' && url.pathname === '/api/payments/status') {
+          const user = await repo.authenticateUser(userToken(req));
+          await throttle(req, 'payment-status', user.id);
+          const key = url.searchParams.get('requestKey');
+          if (typeof key !== 'string' || !/^[a-f0-9-]{36}$/i.test(key))
+            throw new ApiError(400, 'Invalid payment request.');
+          if (repo.kind !== 'mongodb') throw new ApiError(503, 'Payment status is unavailable.');
+          const row = await repo
+            .c('payments')
+            .findOne(
+              { requestKey: key, userId: user.id },
+              { readConcern: { level: 'linearizable' }, maxTimeMS: 5000 },
+            );
+          if (!row) return send(200, { status: 'not_found', serverNow: clock() });
+          const booking = row.bookingId
+            ? await repo.c('bookings').findOne({ _id: row.bookingId, userId: user.id })
+            : null;
+          return send(200, {
+            status: booking
+              ? booking.status === 'confirmed'
+                ? 'confirmed'
+                : 'cancelled'
+              : row.status,
+            serverNow: clock(),
+            ...(Number.isFinite(row.expires) ? { expires: row.expires } : {}),
+            ...(booking
+              ? {
+                  booking: passView({
+                    ...booking.pass,
+                    boat: booking.boat,
+                    bookingStatus: booking.status,
+                    cancellationPending: booking.cancellation?.status === 'requested',
+                  }),
+                }
+              : {}),
+          });
+        }
         if (req.method === 'GET' && url.pathname === '/api/payments/config')
           return send(200, {
             cancellationPolicy: repo.cancellations?.policy,

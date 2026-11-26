@@ -96,7 +96,7 @@ test('guests must sign in before booking and the intended trip resumes after log
     expect(screen.getByRole('button', { name: 'Choose seats for me' }).disabled).toBe(false),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Choose seats for me' }));
-  fireEvent.click(screen.getByRole('button', { name: /Proceed to payment/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Continue to passenger details/ }));
   expect(screen.getByLabelText('Email address').readOnly).toBe(true);
   expect(screen.getByLabelText('Email address').value).toBe(user.email);
 });
