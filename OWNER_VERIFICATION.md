@@ -89,3 +89,18 @@ All app replicas must run the new code and share the MongoDB database and OTP se
 Existing approved boats are hidden and cannot accept new sales until their linked owner completes both checks. Historical passes and payments remain accessible. Legacy admin-created boats without an owner can be linked by an admin to a verified account in `/admin/fleet`, after checking authority and recording a reason. Linking resets the boat to draft and requires fresh independent review. It preserves tickets but can cause active paid checkouts to need refund attention; reconcile operations before linking. This action does not support transfers from an already linked owner.
 
 Identity data and phone numbers remain personal data. Restrict database and backup access, use TLS/encryption at rest, and implement the merchant's approved retention/deletion and withdrawal procedures. MongoDB TTL removes expired OTP challenges; durable verification receipts are not automatically deleted solely on expiry. Public boat listings and customer passes never include owner identity receipts or OTP hashes.
+
+## Send-code control is disabled or hard to find
+
+The owner page always shows a full-width **Send verification code** button. The
+nearby helper explains loading/status failure, required email verification,
+SMS unavailability or missing consent. A failed status lookup offers **Refresh
+verification status**; a missing identity provider does not disable mobile SMS.
+
+For the deployment operator, SMS availability requires `SMS_ENABLED=true`, a valid
+private `TEXTBEE_API_KEY`, the 24-character hexadecimal `TEXTBEE_DEVICE_ID`, and a
+shared `MOBILE_OTP_SECRET` of at least 32 characters on every replica. Restart the
+Node backend after editing its `.env`. Never expose these values in `VITE_*` or
+support screenshots. The customer must verify their email and tick SMS consent.
+The registered TextBee Android phone must be ready to send SMS for actual delivery;
+a visible/enabled button alone does not prove provider or handset delivery.

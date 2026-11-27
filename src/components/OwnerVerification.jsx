@@ -14,6 +14,18 @@ export default function OwnerVerification({ user, onStatus }) {
     [error, setError] = useState(''),
     [sent, setSent] = useState(false),
     [notice, setNotice] = useState('');
+  const emailRequired = user.emailVerified === false;
+  const mobileHelp = !state
+    ? error
+      ? 'Unable to load verification options. Refresh verification status and try again.'
+      : 'Loading verification options…'
+    : emailRequired
+      ? 'Verify your email first using the email verification panel above.'
+      : !state.mobileEnabled
+        ? 'Mobile verification is unavailable. Contact support.'
+        : !consent
+          ? 'Tick the SMS consent checkbox to enable sending a code.'
+          : 'Enter your mobile number, then send the verification code.';
   async function refresh(signal) {
     const data = await request('/api/owner/verification', {
       signal,
@@ -77,9 +89,6 @@ export default function OwnerVerification({ user, onStatus }) {
       <p>
         {t('Mobile verification')}: {t(state?.mobileVerified ? 'Verified' : 'Not verified')}
       </p>
-      {state && !state.mobileEnabled && !state.mobileVerified && (
-        <p>{t('Mobile verification is unavailable. Contact support.')}</p>
-      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -88,6 +97,7 @@ export default function OwnerVerification({ user, onStatus }) {
             consent,
           });
         }}
+        className="mobile-verification-form"
       >
         <label>
           {t('Mobile number')}
@@ -104,8 +114,16 @@ export default function OwnerVerification({ user, onStatus }) {
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
           {t('I agree to receive an SMS code to verify this mobile number.')}
         </label>
-        <button disabled={busy || !consent || !state?.mobileEnabled}>
-          {t(sent ? 'Resend code' : 'Send verification code')}
+        <p id="mobile-action-help" role="status">
+          {t(mobileHelp)}
+        </p>
+        <button
+          className="primary wide mobile-send-code"
+          type="submit"
+          aria-describedby="mobile-action-help"
+          disabled={busy || emailRequired || !consent || !state?.mobileEnabled}
+        >
+          {t(busy ? 'Please wait…' : sent ? 'Resend code' : 'Send verification code')}
         </button>
       </form>
       {sent && (
@@ -130,7 +148,9 @@ export default function OwnerVerification({ user, onStatus }) {
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
             />
           </label>
-          <button disabled={busy || code.length !== 6}>{t('Verify mobile')}</button>
+          <button disabled={busy || emailRequired || code.length !== 6}>
+            {t('Verify mobile')}
+          </button>
         </form>
       )}
       <p>
@@ -180,11 +200,14 @@ export default function OwnerVerification({ user, onStatus }) {
             'I consent to identity verification for boat owner registration and storage of the verification result, legal name and validity. Nautica does not request my full Aadhaar number.',
           )}
         </label>
-        <button disabled={busy || !identityConsent || !state?.identityEnabled}>
+        <button disabled={busy || emailRequired || !identityConsent || !state?.identityEnabled}>
           {t('Continue to identity verification')}
         </button>
       </form>
-      <button disabled={busy || !state?.identityEnabled} onClick={() => act('identity/check', {})}>
+      <button
+        disabled={busy || emailRequired || !state?.identityEnabled}
+        onClick={() => act('identity/check', {})}
+      >
         {t('Check identity verification status')}
       </button>
       <button

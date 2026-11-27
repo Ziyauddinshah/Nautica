@@ -1,5 +1,15 @@
 /** @file Feature message/condition catalog; no private provider settings are exposed. */
 export const hi = {
+  'Unable to load verification options. Refresh verification status and try again.':
+    'सत्यापन विकल्प लोड नहीं हुए। सत्यापन की स्थिति फिर जाँचें और प्रयास करें।',
+  'Loading verification options…': 'सत्यापन विकल्प लोड हो रहे हैं…',
+  'Verify your email first using the email verification panel above.':
+    'पहले ऊपर दिए गए ईमेल सत्यापन विकल्प से अपना ईमेल सत्यापित करें।',
+  'Tick the SMS consent checkbox to enable sending a code.':
+    'कोड भेजने के लिए SMS सहमति का चेकबॉक्स चुनें।',
+  'Enter your mobile number, then send the verification code.':
+    'अपना मोबाइल नंबर भरें, फिर सत्यापन कोड भेजें।',
+
   'Verify your email': 'अपना ईमेल सत्यापित करें',
   'Confirm your email before booking or registering a boat. Booking emails are held until verification.':
     'बुकिंग या नाव पंजीकरण से पहले अपना ईमेल सत्यापित करें। सत्यापन तक बुकिंग ईमेल रोके जाते हैं।',

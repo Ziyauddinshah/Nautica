@@ -103,3 +103,39 @@ test('unconfigured verification cannot unlock owner registration and offers an A
     }).disabled,
   ).toBe(true);
 });
+
+test('send-code button stays visible and explains why email or consent is required', async () => {
+  vi.mocked(fetch).mockResolvedValue(
+    json({
+      mobileEnabled: true,
+      identityEnabled: false,
+      mobileVerified: false,
+      identityVerified: false,
+    }),
+  );
+  const view = render(
+    <OwnerVerification user={{ ...user, emailVerified: false }} onStatus={vi.fn()} />,
+  );
+  await screen.findByText('Verify your email first using the email verification panel above.');
+  const button = screen.getByRole('button', { name: 'Send verification code' });
+  expect(button.classList.contains('primary')).toBe(true);
+  expect(button.getAttribute('aria-describedby')).toBe('mobile-action-help');
+  expect(button.disabled).toBe(true);
+  view.rerender(<OwnerVerification user={{ ...user, emailVerified: true }} onStatus={vi.fn()} />);
+  await screen.findByText('Tick the SMS consent checkbox to enable sending a code.');
+  fireEvent.click(
+    screen.getByLabelText('I agree to receive an SMS code to verify this mobile number.'),
+  );
+  expect(button.disabled).toBe(false);
+});
+test('failed status lookup keeps send-code visible and explains how to retry', async () => {
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503 }),
+  );
+  render(<OwnerVerification user={user} onStatus={vi.fn()} />);
+  await screen.findByText(
+    'Unable to load verification options. Refresh verification status and try again.',
+  );
+  expect(screen.getByRole('button', { name: 'Send verification code' }).disabled).toBe(true);
+  expect(screen.getByRole('button', { name: 'Refresh verification status' })).toBeTruthy();
+});

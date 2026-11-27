@@ -2687,3 +2687,27 @@ button,
 .photo-upload {
   grid-column: 1/-1;
 }
+
+.mobile-verification-form {
+  max-width: 640px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+.fleet-portal .mobile-send-code {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin: 12px 0;
+  background: var(--teal);
+  color: white;
+  font-weight: 700;
+}
+.fleet-portal .mobile-send-code:disabled {
+  background: #344e59;
+  color: white;
+  opacity: 1;
+  cursor: not-allowed;
+}
